@@ -1,367 +1,128 @@
-# 🚀 AutoPilot Template
+# AP Control Tower
 
-Your AI Command Center starter kit for the AutoPilot Hackathon.
+**Autopilot Asia Hackathon 2026 · Round 2 · Track 1 — Finance / Accounts Payable**
 
-Build an intelligent, multi-agent command center that automates business processes with AI — while keeping humans in the loop for oversight and exception handling.
+A governed Accounts Payable operation: an AI Employee that screens every incoming invoice,
+clears the clean ones without a human, and escalates the genuinely risky ones to a person with
+the reasoning already written up.
 
----
-
-## Prerequisites
-
-Before you begin, make sure you have these installed on your machine:
-
-| Tool | macOS | Windows | Why you need it |
-|------|-------|---------|-----------------|
-| **Docker Desktop** | [Download for Mac](https://www.docker.com/products/docker-desktop/) | [Download for Windows](https://www.docker.com/products/docker-desktop/) | Runs all services (backend, frontend, database) in containers |
-| **Git** | Pre-installed or `brew install git` | [Download](https://git-scm.com/download/win) or `winget install Git.Git` | Clone the repository |
-
-> **Windows users:** Make sure WSL 2 is enabled (Docker Desktop will prompt you). If you see a WSL error, run `wsl --install` in PowerShell as Administrator and restart.
+Built on the official [AutoPilot Template](https://github.com/digitamizers/AutoPilot-Template).
 
 ---
 
-## 🚀 Getting Started — Step by Step
+## The two layers
 
-### Step 1: Clone the Repository
+| Layer | Runs on | What it is |
+|---|---|---|
+| **The agent** | Supervity Auto | 1 Orchestrator + 5 Operator Agents doing the actual AP work |
+| **The Command Center** | this repository | Dashboard · AI Policies · AI Insights · AI Manager · Data Manager · Workbench |
 
-**macOS (Terminal) / Windows (PowerShell / Git Bash):**
-```bash
-git clone <your-repo-url>
-cd AutoPilot-Template
-```
+All orchestration lives on Auto. Everything in this repo is the operation *around* the agent —
+the rules a business owns, the record of what happened, and the queue where a human steps in.
 
-### Step 2: Create Your Environment File
+### The five Operators
 
-**macOS / Linux:**
-```bash
-cp .env.example .env
-```
-
-**Windows (PowerShell):**
-```powershell
-Copy-Item .env.example .env
-```
-
-**Windows (Command Prompt):**
-```cmd
-copy .env.example .env
-```
-
-> The default `.env` works out of the box — `AUTH_BYPASS=true` means no external auth setup needed. The app starts with a "Dev User" session automatically.
-
-### Step 3: Start Docker Desktop
-
-1. Open **Docker Desktop** from your Applications (Mac) or Start Menu (Windows)
-2. Wait until the Docker icon in your system tray/menu bar shows **"Docker Desktop is running"**
-3. If this is your first time, Docker may take 1-2 minutes to initialize
-
-### Step 4: Start All Services
-
-**macOS / Linux (Terminal):**
-```bash
-make up
-```
-
-**Windows (PowerShell):**
-```powershell
-.\scripts\start.ps1
-```
-
-> This script clears WSL2 port conflicts, starts Docker, and verifies all services are reachable.
-> You can still use `docker compose up --build -d` directly, but the script handles a common Windows networking issue automatically.
-
-> First run takes 2-5 minutes to download images and build containers. Subsequent runs use cache and start in ~15 seconds.
-
-### Step 5: Verify Everything is Running
-
-**macOS / Linux:**
-```bash
-docker compose ps
-```
-
-**Windows (PowerShell):**
-```powershell
-docker compose ps
-```
-
-You should see 3 services with status `running` or `Up`:
-```
-NAME                              STATUS
-autopilot-template-postgres-1     running (healthy)
-autopilot-template-backend-1      running
-autopilot-template-frontend-1     running
-```
-
-### Step 6: Open Your Command Center
-
-| Service | URL | What it is |
-|---------|-----|------------|
-| 🖥️ **Dashboard** | [http://localhost:3001](http://localhost:3001) | Your Command Center UI |
-| ⚙️ **API Docs** | [http://localhost:8001/api/docs](http://localhost:8001/api/docs) | Backend Swagger documentation |
-| 🗄️ **Database** | `localhost:5432` | PostgreSQL (user: `user`, password: `password`) |
-
-**You should see the Command Center dashboard with:**
-- Stat cards showing AI activity metrics
-- An activity chart with weekly data
-- An AI Confidence indicator
-- The AI Manager button in the top header bar
+| # | Operator | Job |
+|---|---|---|
+| 1 | AP · Intake & Normalize | parse messy amounts and dates, classify, build matching keys |
+| 2 | AP · Duplicate & Fraud Screen | exact and near-duplicate detection across channels |
+| 3 | AP · Three-Way Match | invoice ↔ PO **line** ↔ goods receipt |
+| 4 | AP · Bank Change Verification | payment-redirection fraud, via 4-signal correlation |
+| 5 | AP · Entity & Approval Control | booking entity, FX, delegation-of-authority band |
 
 ---
 
-## 🛑 Stopping & Restarting
+## Start here
 
-### Stop All Services
+**`ap/DELIVERY_PLAN_R2.md`** is the single source of truth. Part A is the delivery plan;
+Part B is the exact text to paste into Supervity Auto to build each Operator.
 
-**macOS / Linux:**
+| File | What it is |
+|---|---|
+| [`ap/DELIVERY_PLAN_R2.md`](ap/DELIVERY_PLAN_R2.md) | the plan + all six Auto build commands |
+| [`ap/DATA_PROFILE_R2.md`](ap/DATA_PROFILE_R2.md) | trap census — every edge case in the pack, counted |
+| [`ap/oracle/build_oracle_r2.py`](ap/oracle/build_oracle_r2.py) | independent answer key for all 450 invoices |
+| [`ap/supabase/schema_r2.sql`](ap/supabase/schema_r2.sql) | Supabase schema for the 14 AP tables |
+| [`docs/AP_SETUP.md`](docs/AP_SETUP.md) | step-by-step setup |
+| [`docs/template-readme.md`](docs/template-readme.md) | the original template setup guide |
+
+---
+
+## Quick start
+
 ```bash
-make down
+cp .env.example .env          # Windows: Copy-Item .env.example .env
+# set NEXTAUTH_SECRET to any base64 string; the rest can stay blank to start
+docker compose up --build -d  # Windows: .\scripts\start.ps1
+docker compose exec backend alembic upgrade head
 ```
 
-**Windows (PowerShell):**
-```powershell
-docker compose down
-```
+| Service | URL |
+|---|---|
+| Command Center | http://localhost:3001 |
+| API docs | http://localhost:8001/api/docs |
+| Postgres | `localhost:5432` |
 
-### Restart (without rebuilding)
+The migration seeds 10 policies and the integration registry. Verify:
 
-**macOS / Linux:**
 ```bash
-docker compose up -d
+docker compose exec postgres psql -U user -d app_db -c "select key, value, version from ap_policies order by key;"
 ```
 
-**Windows (PowerShell):**
-```powershell
-docker compose up -d
-```
+### Running the tests
 
-### Full Rebuild (after code changes)
-
-**macOS / Linux:**
 ```bash
-make up
+docker compose exec backend pytest tests/ -q
 ```
 
-**Windows (PowerShell):**
-```powershell
-docker compose up --build -d
-```
+Or locally without Docker:
 
-### Clean Reset (fresh start — removes all data)
-
-**macOS / Linux:**
 ```bash
-make down
-docker volume rm autopilot-template_postgres_data autopilot-template_document_storage
-make up
-```
-
-**Windows (PowerShell):**
-```powershell
-docker compose down
-docker volume rm autopilot-template_postgres_data autopilot-template_document_storage
-docker compose up --build -d
+python -m venv .venv && .venv/Scripts/pip install -r packages/requirements.txt
+.venv/Scripts/python -m pytest tests/ -q
 ```
 
 ---
 
-## 📋 Common Commands Reference
+## ⚠️ The dataset is deliberately not in this repository
 
-### macOS / Linux (using `make`)
+The Supervity Round 2 data pack **may not be redistributed** (Round 2 Participant Guide §9.4),
+and this repo is public. The organizer pack, anything derived from it, and the briefs are all
+gitignored.
 
-| Command | What it does |
-|---------|-------------|
-| `make up` | Build and start all services |
-| `make down` | Stop all services |
-| `make logs-be` | Stream backend logs (live) |
-| `make logs-fe` | Stream frontend logs (live) |
-| `make reset-db` | Reset database and re-seed sample data |
-| `make migrate-create MSG='add users table'` | Create a new database migration |
-| `make migrate-up` | Apply all pending migrations |
-| `make migrate-down` | Rollback the last migration |
-| `make migrate-history` | Show migration history |
-| `make lint` | Lint backend + frontend code |
-| `make test-be` | Run backend unit tests |
-| `make help` | Show all available commands |
+Every team already has the pack. To use it, point the scripts at your own copy:
 
-### Windows (using `docker compose` directly)
-
-| Command | What it does |
-|---------|-------------|
-| `docker compose up --build -d` | Build and start all services |
-| `docker compose down` | Stop all services |
-| `docker compose logs -f backend` | Stream backend logs (live) |
-| `docker compose logs -f frontend` | Stream frontend logs (live) |
-| `docker compose exec backend python scripts/reset_db.py` | Reset database |
-| `docker compose exec backend alembic revision --autogenerate -m "description"` | Create migration |
-| `docker compose exec backend alembic upgrade head` | Apply all pending migrations |
-| `docker compose exec backend alembic downgrade -1` | Rollback last migration |
-| `docker compose exec backend alembic history --verbose` | Show migration history |
-| `docker compose exec backend pytest` | Run backend tests |
-
-> **Tip for Windows:** You can install `make` via [Chocolatey](https://chocolatey.org/) (`choco install make`) or [Scoop](https://scoop.sh/) (`scoop install make`) to use the shorter `make` commands.
-
----
-
-## 🔍 Viewing Logs & Debugging
-
-### Watch all logs at once
 ```bash
-# macOS / Linux
-docker compose logs -f
-
-# Stop following with Ctrl+C
+python ap/supabase/generate_import_csvs.py /path/to/csv   # -> ap/supabase/import/
+python ap/oracle/build_oracle_r2.py       /path/to/csv    # -> EXPECTED_ORACLE_R2.csv
 ```
 
-### Watch a specific service
-```bash
-# Backend only
-docker compose logs -f backend
+Both also accept an `AP_DATASET_DIR` environment variable. Load the generated CSVs into
+Supabase after running `ap/supabase/schema_r2.sql`.
 
-# Frontend only
-docker compose logs -f frontend
-
-# Database only
-docker compose logs -f postgres
-```
-
-### Check if a service is healthy
-```bash
-# Quick health check
-curl http://localhost:8001/api/health
-
-# Or check container status
-docker compose ps
-```
-
-### Restart a single service (without touching others)
-```bash
-docker compose restart frontend
-docker compose restart backend
-```
+**The data reaches the Operators through a live Supabase integration — never read from disk
+at runtime.**
 
 ---
 
-## What's Included
+## Standing rules
 
-### Backend (FastAPI + Python)
-- ✅ FastAPI with auto-generated Swagger docs
-- ✅ PostgreSQL database with Alembic migrations
-- ✅ Auth system with dev-mode bypass (`AUTH_BYPASS=true`)
-- ✅ Audit logging middleware (every request logged)
-- ✅ Items CRUD API (sample entity)
-- ✅ File storage API (local or cloud)
-- ✅ Role-based authorization engine
+- **Never hardcode to sample rows.** Judges may run a record we did not prepare.
+- **All thresholds live in the policy store**, never in Operator prose or in code.
+- **Never invent a value for a missing field** — pause and route to the Workbench.
+- **`ap_decisions.source` must be `auto_run` before submission.** Rows backfilled from the
+  oracle for development are marked `oracle_backfill` and must be purged.
+- **Never commit the dataset or an API key.** The build must run from a clean clone.
 
-### Frontend (Next.js + React)
-- ✅ Premium glassmorphic UI with Framer Motion animations
-- ✅ Dashboard with stat cards and activity chart
-- ✅ AI Policies page with demo data (5 sample policies)
-- ✅ AI Insights page with demo data (patterns, anomalies, actions)
-- ✅ AI Manager chat interface
-- ✅ Workbench page
-- ✅ Settings page
-- ✅ Command palette (⌘K / Ctrl+K)
+## Outcome metrics
 
-### Infrastructure
-- ✅ Docker Compose for one-command startup
-- ✅ Pre-built production frontend (instant page loads)
-- ✅ Cross-platform (macOS, Windows, Linux)
+Touchless rate · money protected · cash optimized. Baseline from the oracle on the public pack:
 
----
+| GR policy | Touchless |
+|---|---|
+| `strict_require_gr` | 27.8% |
+| `fo_aware` | 40.2% |
 
-## What YOU Build
-
-This is a **starter template**. You need to connect these frontend shells to real AI logic:
-
-| Feature | Frontend Status | Your Task |
-|---------|----------------|-----------| 
-| **AI Manager** | ✅ Chat UI ready | Connect to your AI agent orchestration backend |
-| **AI Policies** | ✅ Demo data loaded | Build the policy engine that evaluates rules at runtime |
-| **AI Insights** | ✅ Demo data loaded | Build the analysis engine that generates insights from your data |
-| **Workbench** | ✅ UI shell ready | Build exception routing — when AI fails, send work items here |
-
-See **[`docs/command-center-guide.md`](docs/command-center-guide.md)** for the full architecture guide.
-
----
-
-## Project Structure
-
-```
-AutoPilot-Template/
-├── app/                    # Backend (FastAPI)
-│   ├── main.py             # App entry point
-│   ├── security.py         # Auth + AUTH_BYPASS logic
-│   ├── authz.py            # Authorization engine
-│   ├── models/             # SQLAlchemy models
-│   ├── schemas/            # Pydantic schemas
-│   ├── routers/            # API endpoints
-│   ├── services/           # Business logic
-│   └── core/               # Database, storage
-├── frontend/               # Frontend (Next.js)
-│   ├── src/app/            # Pages (dashboard, AI, admin, etc.)
-│   ├── src/components/     # Reusable UI components
-│   └── src/lib/            # API client, utilities
-├── alembic/                # Database migrations
-├── scripts/                # Seed data, utilities
-├── docs/                   # Documentation
-│   ├── command-center-guide.md   # ⭐ What to build
-│   ├── hackathon-brief.md        # ⭐ Problem statements
-│   ├── design-system-template.md # UI patterns
-│   └── Audit System Guide.md     # Audit logging
-├── docker-compose.yml      # Service orchestration
-├── Dockerfile              # Backend container
-├── Makefile                # Dev commands (macOS/Linux)
-└── .env.example            # Environment config template
-```
-
----
-
-## Key Environment Variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `AUTH_BYPASS` | `true` | Skip all auth (dev mode) |
-| `AUTH_DEBUG` | `true` | Verbose auth logging |
-| `APP_ENV` | `development` | Backend mode |
-| `DATABASE_URL` | auto-generated | PostgreSQL connection |
-| `FRONTEND_URL` | `http://localhost:3001` | CORS origin |
-
----
-
-## 🛠️ Troubleshooting
-
-| Problem | Solution |
-|---------|----------|
-| **Docker not found** | Install [Docker Desktop](https://www.docker.com/products/docker-desktop/) and make sure it's running |
-| **Port 3001 already in use** | Stop whatever is on that port: `lsof -ti:3001 \| xargs kill` (Mac) or change the port in `docker-compose.yml` |
-| **Port 5432 already in use** | You have a local PostgreSQL running. Stop it or change the port in `docker-compose.yml` |
-| **`make` not found (Windows)** | Use `docker compose` commands directly (see table above) or install make via `choco install make` |
-| **WSL error (Windows)** | Run `wsl --install` in PowerShell as Admin, then restart your PC |
-| **ERR_CONNECTION_RESET on localhost (Windows)** | WSL2's relay can intercept port 3001 via IPv6. Use `.\scripts\start.ps1` which handles this automatically, or manually run `wsl --shutdown` before `docker compose up --build -d`. |
-| **Containers crash-looping** | Check logs: `docker compose logs backend` — usually a missing env var or DB issue |
-| **Frontend shows blank page** | Check if backend is healthy: `curl http://localhost:8001/api/health` |
-| **Database connection refused** | Wait 10-15 seconds after startup — Postgres needs time to initialize on first run |
-
----
-
-## Documentation
-
-| Document | Purpose |
-|----------|---------| 
-| **[Command Center Guide](docs/command-center-guide.md)** | What is a Command Center, AI Policies, Insights, Manager, Workbench |
-| **[Hackathon Brief](docs/hackathon-brief.md)** | Problem statements, judging criteria |
-| **[Design System](docs/design-system-template.md)** | UI component patterns, colors, spacing |
-| **[Audit System](docs/Audit%20System%20Guide.md)** | Audit logging architecture |
-
----
-
-## Tech Stack
-
-| Layer | Technology | Purpose |
-|-------|------------|---------|
-| **Backend** | Python 3.11 + FastAPI | API server |
-| **Frontend** | Next.js 15 + React 19 | Web dashboard |
-| **Database** | PostgreSQL 15 | Persistent storage |
-| **ORM** | SQLAlchemy 2 + Alembic | Data modeling + migrations |
-| **Auth** | NextAuth.js + JWT | Authentication (bypass-able) |
-| **UI** | Tailwind CSS + Framer Motion | Styling + animations |
-| **Containers** | Docker + Docker Compose | Development environment |
+One editable policy moves it 12 points. Money protected: MYR 40.07M (+ SGD/INR/EUR/USD).
+Fraud: 4 invoices held across 3 spoofed bank-change attempts, 0 false positives against
+7 legitimate bank changes.

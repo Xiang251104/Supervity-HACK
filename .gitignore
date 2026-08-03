@@ -305,3 +305,17 @@ deployment/prod.env
 
 keycloak_convert/
 keycloak_convert.zip
+# ---------------------------------------------------------------------------
+# AP Control Tower
+# ---------------------------------------------------------------------------
+# The Supervity Round 2 dataset may NOT be redistributed (Round 2 guide §9.4).
+# Never commit the organizer pack, anything derived from it, or the briefs.
+dataset/
+ap/supabase/import/
+ap/oracle/*.csv
+ap/**/*.xlsx
+ap/**/*.pdf
+
+# The template ignores *.sql wholesale (for DB dumps). Our schema DDL is our own
+# work, not organizer data, and Lim needs it — un-ignore it explicitly.
+!ap/supabase/schema_r2.sql

@@ -1,3 +1,4 @@
+import nodePath from 'node:path'
 import type { NextConfig } from 'next'
 
 // Handle basePath - Next.js requires either empty string or path starting with /
@@ -11,6 +12,15 @@ const getBasePath = () => {
 
 const nextConfig: NextConfig = {
   basePath: getBasePath(),
+
+  // Pin the workspace root to this directory. Without it, Next walks up looking
+  // for a lockfile and can latch onto an unrelated package-lock.json further up
+  // the tree (e.g. one sitting in the user's home directory), which changes file
+  // tracing and produces confusing build output.
+  turbopack: {
+    root: nodePath.join(__dirname),
+  },
+  outputFileTracingRoot: nodePath.join(__dirname),
 
   env: {
     NEXT_PUBLIC_API_URL:
