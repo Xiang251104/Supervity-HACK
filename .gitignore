@@ -199,6 +199,7 @@ notes.txt
 
 # Node.js / NPM
 node_modules/
+node_modules.incomplete/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*

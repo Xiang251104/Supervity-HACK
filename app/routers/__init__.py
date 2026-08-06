@@ -6,6 +6,8 @@ Note: File endpoints are defined in main.py to maintain proper path ordering.
 """
 
 from .admin import router as admin_router
+from .ap_data_manager import router as ap_data_manager_router
+from .ap_workbench import router as ap_workbench_router
 from .audit import router as audit_router
 from .auth import router as auth_router
 from .examples import router as examples_router
@@ -16,6 +18,8 @@ __all__ = [
     "health_router",
     "auth_router",
     "admin_router",
+    "ap_data_manager_router",
+    "ap_workbench_router",
     "audit_router",
     "items_router",
     "examples_router",
