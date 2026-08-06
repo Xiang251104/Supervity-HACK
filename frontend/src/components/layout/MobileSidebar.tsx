@@ -25,6 +25,7 @@ const navItems = [
   {
     title: 'System',
     items: [
+      { href: '/data-manager', label: 'Data Manager', icon: Icons.network },
       { href: '/settings', label: 'Settings', icon: Icons.settings },
     ],
   },

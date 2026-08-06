@@ -37,6 +37,8 @@ from .core.storage import GCSStorage, LocalStorage, StorageBackend
 from .middleware import AuditMiddleware
 from .routers import (
     admin_router,
+    ap_data_manager_router,
+    ap_workbench_router,
     audit_router,
     auth_router,
     examples_router,
@@ -147,6 +149,12 @@ api_router.include_router(admin_router)
 
 # Audit logs (admin only)
 api_router.include_router(audit_router)
+
+# AP exception queue and human resolution
+api_router.include_router(ap_workbench_router)
+
+# AP integration health registry
+api_router.include_router(ap_data_manager_router)
 
 # Item CRUD operations
 api_router.include_router(items_router)

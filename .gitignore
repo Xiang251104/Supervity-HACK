@@ -199,6 +199,7 @@ notes.txt
 
 # Node.js / NPM
 node_modules/
+node_modules.incomplete/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -319,3 +320,6 @@ ap/**/*.pdf
 # The template ignores *.sql wholesale (for DB dumps). Our schema DDL is our own
 # work, not organizer data, and Lim needs it — un-ignore it explicitly.
 !ap/supabase/schema_r2.sql
+
+# Local isolated feature workspaces
+.worktrees/
