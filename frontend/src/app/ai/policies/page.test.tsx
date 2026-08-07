@@ -322,6 +322,21 @@ describe('AP Policies page', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Edit Duplicate invoice ceiling' }))
     expect(screen.getByLabelText('Policy value')).toHaveAttribute('type', 'number')
     expect(screen.getByLabelText('Policy value')).toHaveAttribute('step', 'any')
+    const numberDialog = screen.getByRole('dialog')
+    expect(within(numberDialog).getByText('Policy details')).toBeInTheDocument()
+    expect(within(numberDialog).getByText('duplicate_invoice_ceiling')).toBeInTheDocument()
+    expect(
+      within(numberDialog).getByText('Blocks invoices that exceed the duplicate-risk ceiling.')
+    ).toBeInTheDocument()
+    expect(within(numberDialog).getByText('number')).toBeInTheDocument()
+    expect(within(numberDialog).getByText('5000 MYR')).toBeInTheDocument()
+    expect(within(numberDialog).getByText('block')).toBeInTheDocument()
+    expect(within(numberDialog).getByText('Active')).toBeInTheDocument()
+    expect(within(numberDialog).getByText('7')).toBeInTheDocument()
+    expect(within(numberDialog).getByText('finance.controller@example.com')).toBeInTheDocument()
+    expect(
+      within(numberDialog).getByText(formatPolicyTimestamp('2026-08-07T10:30:00Z'))
+    ).toHaveAttribute('dateTime', '2026-08-07T10:30:00Z')
     fireEvent.click(screen.getByRole('button', { name: 'Close' }))
 
     fireEvent.click(screen.getByRole('button', { name: 'Edit Unverified vendor route' }))
@@ -385,16 +400,21 @@ describe('AP Policies page', () => {
     expect(updateAPPolicy).not.toHaveBeenCalled()
   })
 
-  it('fails closed when enum option metadata is malformed', async () => {
+  it.each<[string, APPolicy['options']]>([
+    ['null', null],
+    ['non-string values', [1]],
+    ['an empty list', []],
+  ])('fails closed when enum option metadata contains %s', async (_label, options) => {
     vi.mocked(getAPPolicies).mockResolvedValue({
       ...snapshot,
-      items: [{ ...snapshot.items[1], options: null }],
+      items: [{ ...snapshot.items[1], options }],
     })
     render(<AIPoliciesPage />)
 
     await screen.findByRole('article', { name: 'Unverified vendor route policy' })
     fireEvent.click(screen.getByRole('button', { name: 'Edit Unverified vendor route' }))
     expect(screen.queryByLabelText('Policy value')).not.toBeInTheDocument()
+    expect(screen.getByText('Available enum options are unavailable.')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Save policy' }))
 
     expect(
@@ -448,6 +468,23 @@ describe('AP Policies page', () => {
 
     expect(await screen.findByText('Version conflict')).toBeInTheDocument()
     expect(screen.getByRole('dialog')).toBeInTheDocument()
+  })
+
+  it('clears a prior success status when a new edit fails to save', async () => {
+    render(<AIPoliciesPage />)
+
+    await screen.findByRole('article', { name: 'Duplicate invoice ceiling policy' })
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Duplicate invoice ceiling' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save policy' }))
+    expect(await screen.findByText('Policy updated successfully')).toBeInTheDocument()
+
+    vi.mocked(updateAPPolicy).mockRejectedValueOnce(new Error('Version conflict'))
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Weekend payment review' }))
+
+    expect(screen.queryByText('Policy updated successfully')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Save policy' }))
+    expect(await screen.findByText('Version conflict')).toBeInTheDocument()
+    expect(screen.queryByText('Policy updated successfully')).not.toBeInTheDocument()
   })
 
   it('refetches and displays the authoritative server snapshot after saving', async () => {

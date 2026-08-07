@@ -1,6 +1,6 @@
 'use client'
 
-import { FormEvent, useEffect, useState } from 'react'
+import { FormEvent, ReactNode, useEffect, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -14,7 +14,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
-import { validatePolicyValue } from '@/lib/ap-policies'
+import { formatPolicyValue, validatePolicyValue } from '@/lib/ap-policies'
 import type { APEnumPolicy, APPolicy, APPolicyValue } from '@/types/ap-policies'
 
 type PolicyEditDialogProps = {
@@ -29,8 +29,35 @@ function hasStringEnumOptions(policy: APPolicy): policy is APEnumPolicy & { opti
   return (
     policy.value_type === 'enum' &&
     Array.isArray(policy.options) &&
+    policy.options.length > 0 &&
     policy.options.every((option) => typeof option === 'string')
   )
+}
+
+function PolicyMetadataField({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div>
+      <dt className='text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500'>
+        {label}
+      </dt>
+      <dd className='mt-1 break-words text-sm text-slate-800'>{children}</dd>
+    </div>
+  )
+}
+
+function formatPolicyTimestamp(value: string | null): string {
+  if (!value) return 'Not recorded'
+
+  const timestamp = new Date(value)
+  if (Number.isNaN(timestamp.getTime())) return 'Not recorded'
+
+  return new Intl.DateTimeFormat('en-MY', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(timestamp)
 }
 
 export function PolicyEditDialog({
@@ -105,6 +132,31 @@ export function PolicyEditDialog({
         </DialogHeader>
 
         <form className='space-y-5' noValidate onSubmit={handleSubmit}>
+          <section aria-label='Policy details' className='rounded-lg border border-slate-200 bg-slate-50 p-4'>
+            <h3 className='text-sm font-semibold text-brand-navy'>Policy details</h3>
+            <dl className='mt-3 grid gap-x-4 gap-y-3 sm:grid-cols-2'>
+              <PolicyMetadataField label='Key'>{policy.key}</PolicyMetadataField>
+              <PolicyMetadataField label='Value type'>{policy.value_type}</PolicyMetadataField>
+              <PolicyMetadataField label='Description'>{policy.description}</PolicyMetadataField>
+              <PolicyMetadataField label='Current server value'>
+                <span className='font-mono'>{formatPolicyValue(policy)}</span>
+              </PolicyMetadataField>
+              <PolicyMetadataField label='Severity'>{policy.severity}</PolicyMetadataField>
+              <PolicyMetadataField label='Status'>{policy.active ? 'Active' : 'Inactive'}</PolicyMetadataField>
+              <PolicyMetadataField label='Version'>{policy.version}</PolicyMetadataField>
+              <PolicyMetadataField label='Updated by'>{policy.updated_by ?? 'Not recorded'}</PolicyMetadataField>
+              <PolicyMetadataField label='Updated at'>
+                {policy.updated_at ? (
+                  <time dateTime={policy.updated_at}>
+                    {formatPolicyTimestamp(policy.updated_at)}
+                  </time>
+                ) : (
+                  'Not recorded'
+                )}
+              </PolicyMetadataField>
+            </dl>
+          </section>
+
           <div className='space-y-2'>
             <Label htmlFor='policy-value'>Policy value</Label>
             {policy.value_type === 'number' ? (
@@ -136,7 +188,7 @@ export function PolicyEditDialog({
             ) : null}
             {policy.value_type === 'enum' && !enumOptionsAreValid ? (
               <p className='text-sm text-rose-700' role='alert'>
-                This policy cannot be edited because its available options are invalid.
+                Available enum options are unavailable.
               </p>
             ) : null}
             {policy.value_type === 'boolean' ? (

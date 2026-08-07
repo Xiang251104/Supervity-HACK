@@ -105,6 +105,11 @@ export default function AIPoliciesPage() {
     }
   }, [loadPolicies])
 
+  const handlePolicyEdit = useCallback((policy: APPolicy) => {
+    setSuccessMessage(null)
+    setEditingPolicy(policy)
+  }, [])
+
   useEffect(() => {
     void loadPolicies()
     return () => {
@@ -238,7 +243,7 @@ export default function AIPoliciesPage() {
             {data.items.length === 0 || filteredPolicies.length === 0 ? (
               <EmptyPolicyState hasFilters={data.items.length > 0 && hasFilters} />
             ) : (
-              <PolicyList policies={filteredPolicies} onEdit={setEditingPolicy} />
+              <PolicyList policies={filteredPolicies} onEdit={handlePolicyEdit} />
             )}
           </section>
         </>
