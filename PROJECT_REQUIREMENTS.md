@@ -43,6 +43,7 @@ Build an AP Control Tower in which a Supervity Orchestrator coordinates five spe
 
 - Backend behavior is covered by automated tests.
 - Frontend behavior is covered by focused component tests and a production build.
+- Linux shell entrypoints must be stored and checked out with LF line endings, including on Windows hosts.
 - Database writes are transactional and connector or integrity failures are explicit.
 - Secrets and connection credentials remain environment-managed and are never committed.
 - Reviewer actions must commit the human-owned state and append-only audit event atomically.
