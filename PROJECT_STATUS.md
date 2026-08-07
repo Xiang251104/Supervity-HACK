@@ -14,10 +14,11 @@
 - Reviewer actions preserve the AI verdict and append a separate `human_action` audit event.
 - AP Data Manager service, authenticated snapshot/refresh API, and persisted integration-health page for Outlook, Supabase, Slack, and Supervity.
 - AP Policies Console: authenticated list, typed value updates, active snapshot label, no-op-safe append-only version history, and `/ai/policies` replacement without generic policy-builder content.
+- Tracked Git EOL policy for Linux shell entrypoints; `start_gunicorn.sh` is stored and checked out as LF on Windows clean clones.
 
 ## Automated Verification
 
-- Backend `pytest -q` with the local PostgreSQL test database and `AUTH_BYPASS=true`: 140 passed with five existing dependency/deprecation warnings. This includes the regression proving an arbitrary credential-like stored message is redacted while a true integer HTTP status remains public.
+- Backend `pytest -q` with the local PostgreSQL test database and `AUTH_BYPASS=true`: 142 passed with five existing dependency/deprecation warnings. This includes the Data Manager redaction regression and repository-hygiene checks for the tracked LF policy.
 - Frontend full Vitest: four files and 24 tests passed.
 - Next.js production build and subsequent `tsc --noEmit`: passed sequentially; the known warnings below remain.
 - `git diff --check`: passed. The filename-only high-confidence secret scan excluding `node_modules` and `.next` returned no matches.
@@ -52,6 +53,7 @@ Task 8 in `docs/superpowers/plans/2026-08-04-ap-data-manager-implementation.md` 
   ```powershell
   if (-not (Test-Path .env)) { Copy-Item .env.example .env }
   # Set local NEXTAUTH, Supabase, and Supervity values in the ignored .env.
+  # If clean-clone database defaults conflict locally, adjust only the ignored .env without printing secret values.
   .\scripts\start.ps1
   docker compose exec backend alembic upgrade head
   ```
@@ -62,7 +64,16 @@ Task 8 in `docs/superpowers/plans/2026-08-04-ap-data-manager-implementation.md` 
 - [ ] With real Supabase configuration, select `Refresh health` and record a `healthy` read-only invoice probe with measured latency and safe count. Missing configuration is `unknown`; expected request failure is `down` with an allowlisted category.
 - [ ] With real Supervity configuration, select `Refresh health` and record a `healthy` read-only list-runs probe with safe latency. Missing configuration is `unknown`; expected probe failure is `down`. Confirm no run sample or connector error text is returned. A Supervity Orchestrator workflow ID is not required for this health probe.
 - [ ] Capture redacted Data Manager screenshots and corresponding safe `ap_integrations`, Outlook-run, and Slack-event database evidence. Confirm credentials, raw payloads, invoice identifiers, and complete bank data are absent.
-- [ ] Gate 5 passes only when Outlook (`channel`), Supabase (`system_of_record`), and Slack (`channel`) are all live and `healthy`, matching Gate 5 at lines 217-221 and demo step 7 at line 256 of the supplied `DELIVERY_PLAN_R2-1.md`. `degraded`, `down`, and `unknown` remain valid diagnostics but fail and keep Gate 5 pending. Supervity evidence is required by this checklist but is not one of the three Gate 5 integrations.
+- [ ] Record only the following safe database evidence; these commands exclude integration detail, event payloads, run identifiers, invoice identifiers, and credentials:
+
+  ```powershell
+  docker compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT key, category, status, last_checked_at, latency_ms, records_seen, last_activity_at, last_error FROM ap_integrations ORDER BY key;"'
+  docker compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT count(*) AS outlook_run_count, max(started_at) AS latest_outlook_activity_at FROM ap_runs WHERE trigger_source = ''outlook'';"'
+  docker compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT count(*) FILTER (WHERE payload ->> ''outcome'' = ''success'') AS slack_success_count, max(ts) FILTER (WHERE payload ->> ''outcome'' = ''success'') AS latest_slack_success_at FROM ap_run_events WHERE event_type = ''integration_activity'' AND payload ->> ''integration_key'' = ''slack'';"'
+  docker compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "SELECT ts, payload ->> ''outcome'' AS outcome, payload ->> ''error_category'' AS error_category FROM ap_run_events WHERE event_type = ''integration_activity'' AND payload ->> ''integration_key'' = ''slack'' ORDER BY ts DESC LIMIT 1;"'
+  ```
+
+- [ ] Gate 5 passes only when Outlook (`channel`), Supabase (`system_of_record`), and Slack (`channel`) are all live and `healthy`, matching Gate 5 at lines 217-221 and demo step 7 at line 256 of `ap/DELIVERY_PLAN_R2.md`. `degraded`, `down`, and `unknown` remain valid diagnostics but fail and keep Gate 5 pending. Supervity evidence is required by this checklist but is not one of the three Gate 5 integrations.
 
 ### Workbench Auto-run Acceptance
 
@@ -79,7 +90,7 @@ Task 8 in `docs/superpowers/plans/2026-08-04-ap-data-manager-implementation.md` 
   git clone <repository-url> <new-disposable-path>
   Set-Location <new-disposable-path>
   if (-not (Test-Path .env)) { Copy-Item .env.example .env }
-  # Set local values only in the ignored .env; never paste them into evidence.
+  # Set local values only in the ignored .env; adjust clean-clone database defaults there if needed and never print or paste secret values into evidence.
   .\scripts\start.ps1
   docker compose exec backend alembic upgrade head
   # Run once for this fresh clone; skip only if ap_control_tower_test already exists.
@@ -107,7 +118,7 @@ Task 8 in `docs/superpowers/plans/2026-08-04-ap-data-manager-implementation.md` 
 
 ## Known Issues
 
-- Windows Docker startup previously required a runtime line-ending workaround; no permanent tracked startup-script change has been made.
+- Windows clean-clone shell startup is fixed by the tracked `*.sh text eol=lf` Git policy; the startup script no longer needs a runtime line-ending workaround.
 - The frontend production dependency tree reports four transitive Socket.IO/WebSocket advisories (two moderate, two high). They predate the Workbench runtime path and require a controlled dependency upgrade rather than a forced audit rewrite.
 - The production build reports two pre-existing unused-variable warnings in AI pages and a chart container-size warning outside the Workbench route.
 
