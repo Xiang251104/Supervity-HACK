@@ -354,7 +354,7 @@ describe('AP Policies page', () => {
       expect(updateAPPolicy).toHaveBeenCalledWith(
         'duplicate_invoice_ceiling',
         5000.25,
-        '  temporary threshold  '
+        'temporary threshold'
       )
     )
   })
@@ -472,6 +472,44 @@ describe('AP Policies page', () => {
     expect(screen.queryByText('9999 MYR')).not.toBeInTheDocument()
     expect(screen.getByText('Policy updated successfully')).toBeInTheDocument()
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('closes after PATCH success before starting the authoritative refetch', async () => {
+    const duplicatePolicy = snapshot.items[0] as Extract<APPolicy, { value_type: 'number' }>
+    const update = deferred<APPolicy>()
+    const authoritativeFetch = deferred<APPolicyListResponse>()
+    const authoritativeSnapshot: APPolicyListResponse = {
+      ...snapshot,
+      items: [{ ...duplicatePolicy, value: 7250 }, ...snapshot.items.slice(1)],
+    }
+    vi.mocked(getAPPolicies)
+      .mockResolvedValueOnce(snapshot)
+      .mockReturnValueOnce(authoritativeFetch.promise)
+    vi.mocked(updateAPPolicy).mockReturnValue(update.promise)
+    render(<AIPoliciesPage />)
+
+    await screen.findByRole('article', { name: 'Duplicate invoice ceiling policy' })
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Duplicate invoice ceiling' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save policy' }))
+
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect(getAPPolicies).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      update.resolve(duplicatePolicy)
+      await update.promise
+    })
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(getAPPolicies).toHaveBeenCalledTimes(2)
+
+    await act(async () => {
+      authoritativeFetch.resolve(authoritativeSnapshot)
+      await authoritativeFetch.promise
+    })
+
+    expect(await screen.findByText('7250 MYR')).toBeInTheDocument()
+    expect(screen.getByText('Policy updated successfully')).toBeInTheDocument()
   })
 
   it('does not retain the generic policy-builder experiences', async () => {

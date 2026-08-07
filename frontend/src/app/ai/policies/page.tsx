@@ -95,12 +95,14 @@ export default function AIPoliciesPage() {
   }, [])
 
   const handlePolicySave = useCallback(async (policy: APPolicy, value: APPolicyValue, note: string) => {
-    await updateAPPolicy(policy.key, value, note)
+    await updateAPPolicy(policy.key, value, note.trim())
+  }, [])
+
+  const handlePolicySaved = useCallback(async () => {
     const refreshed = await loadPolicies()
-    if (!refreshed) {
-      throw new Error('Policy was saved, but the authoritative list could not be refreshed.')
+    if (refreshed) {
+      setSuccessMessage('Policy updated successfully')
     }
-    setSuccessMessage('Policy updated successfully')
   }, [loadPolicies])
 
   useEffect(() => {
@@ -249,6 +251,7 @@ export default function AIPoliciesPage() {
           if (!open) setEditingPolicy(null)
         }}
         onSave={handlePolicySave}
+        onSaved={() => void handlePolicySaved()}
       />
     </div>
   )

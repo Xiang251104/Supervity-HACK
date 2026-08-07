@@ -22,6 +22,7 @@ type PolicyEditDialogProps = {
   open: boolean
   onOpenChange: (open: boolean) => void
   onSave: (policy: APPolicy, value: APPolicyValue, note: string) => Promise<void>
+  onSaved: () => void
 }
 
 function hasStringEnumOptions(policy: APPolicy): policy is APEnumPolicy & { options: string[] } {
@@ -37,6 +38,7 @@ export function PolicyEditDialog({
   open,
   onOpenChange,
   onSave,
+  onSaved,
 }: PolicyEditDialogProps) {
   const [rawValue, setRawValue] = useState<APPolicyValue | string>('')
   const [note, setNote] = useState('')
@@ -79,6 +81,7 @@ export function PolicyEditDialog({
     try {
       await onSave(policy, result.value, note)
       onOpenChange(false)
+      onSaved()
     } catch (caught) {
       setSaveError(caught instanceof Error ? caught.message : 'Policy could not be saved.')
     } finally {
