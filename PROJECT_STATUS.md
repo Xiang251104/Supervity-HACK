@@ -23,13 +23,13 @@
 - `git diff --check`: passed. The filename-only high-confidence secret scan excluding `node_modules` and `.next` returned no matches.
 - Final unrelated-change review found no credentials, webhook URLs, sample identifiers, fake/demo health, or hardcoded live integration status. No implementation files were staged or committed.
 - AP Policies focused backend suites (`tests/test_ap_policies.py` and `tests/test_ap_policies_api.py`) passed: 60 tests with five existing dependency/deprecation warnings using the isolated SQLite test setup.
-- AP Policies focused frontend page/helper coverage passed: the page/helper focused suite reached 45 tests; the helper suite had 19 passing tests at the final helper task. `npx tsc --noEmit` passed repeatedly, and `git diff --check` passed for each scoped task diff.
-- AP Policies final verification is still pending: complete backend `pytest -q` has not been run successfully because no real PostgreSQL `DATABASE_URL` is configured. Full frontend Vitest, the production build, final diff/secrets/demo scan, and a dedicated PostgreSQL backend run remain to be completed.
+- AP Policies focused frontend suite passed: 45 tests. Complete frontend Vitest passed: six files and 69 tests. Strict TypeScript passed, and the Next.js production build exited 0 with only the pre-existing unrelated Insights unused-variable and chart-size warnings.
+- AP Policies `git diff --check` and targeted runtime demo/credential scans passed. The full backend `pytest -q` run with real PostgreSQL remains not run and blocked because `DATABASE_URL` is absent; it is not recorded as passed.
 
 ## In Progress
 
 - Final standalone regression checks for Bank Change Verification.
-- Final AP Policies verification, including a dedicated PostgreSQL `DATABASE_URL` and the complete backend suite.
+- PostgreSQL-backed full-suite verification for AP Policies, blocked until a dedicated `DATABASE_URL` is configured.
 
 ## Pending
 
@@ -113,5 +113,5 @@ Task 8 in `docs/superpowers/plans/2026-08-04-ap-data-manager-implementation.md` 
 
 ## Current Next Step
 
-Complete final AP Policies verification: configure a dedicated PostgreSQL `DATABASE_URL`, run the complete backend suite, full frontend Vitest, production build, and final diff/secrets/demo scan. Then finish the standalone Bank Change Verification regression, collect the real Outlook, Slack, Supabase, and Supervity evidence above, and complete Workbench Auto-run acceptance and the clean-clone/demo rehearsal.
+The remaining AP Policies verification prerequisite is the PostgreSQL-backed backend full suite: configure a dedicated `DATABASE_URL` and run `pytest -q`. Afterwards, finish the standalone Bank Change Verification regression, collect the real Outlook, Slack, Supabase, and Supervity evidence above, and complete Workbench Auto-run acceptance and the clean-clone/demo rehearsal.
 
