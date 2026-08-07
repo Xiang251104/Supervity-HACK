@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { PolicyList } from '@/components/ap/policies/policy-list'
 import { PolicySummary } from '@/components/ap/policies/policy-summary'
@@ -66,25 +66,34 @@ export default function AIPoliciesPage() {
   const [error, setError] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [severityFilter, setSeverityFilter] = useState<SeverityFilter>('all')
+  const loadGeneration = useRef(0)
 
   const loadPolicies = useCallback(async () => {
+    const generation = ++loadGeneration.current
     setLoading(true)
     setError(null)
     try {
       const response = await getAPPolicies()
+      if (generation !== loadGeneration.current) return
       setData(response)
     } catch (caught) {
+      if (generation !== loadGeneration.current) return
       setData(null)
       setError(
         caught instanceof Error ? caught.message : 'AP policies are unavailable.'
       )
     } finally {
-      setLoading(false)
+      if (generation === loadGeneration.current) {
+        setLoading(false)
+      }
     }
   }, [])
 
   useEffect(() => {
     void loadPolicies()
+    return () => {
+      loadGeneration.current += 1
+    }
   }, [loadPolicies])
 
   const filteredPolicies = useMemo(() => {
@@ -105,7 +114,7 @@ export default function AIPoliciesPage() {
   const hasFilters = Boolean(searchQuery.trim()) || severityFilter !== 'all'
 
   return (
-    <main className='mx-auto w-full max-w-[1440px] space-y-7 px-4 py-6 sm:px-6 lg:px-8 lg:py-8'>
+    <div className='mx-auto w-full max-w-[1440px] space-y-7 px-4 py-6 sm:px-6 lg:px-8 lg:py-8'>
       <header className='flex flex-col justify-between gap-5 border-b border-slate-200 pb-6 sm:flex-row sm:items-end'>
         <div>
           <div className='flex items-center gap-2 text-brand-cornflower'>
@@ -212,6 +221,6 @@ export default function AIPoliciesPage() {
           </section>
         </>
       ) : null}
-    </main>
+    </div>
   )
 }

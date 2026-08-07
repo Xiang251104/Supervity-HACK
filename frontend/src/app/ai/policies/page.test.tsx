@@ -1,4 +1,5 @@
-import { fireEvent, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { StrictMode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import AIPoliciesPage from './page'
@@ -59,6 +60,26 @@ const snapshot: APPolicyListResponse = {
   ],
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise
+    reject = rejectPromise
+  })
+  return { promise, resolve, reject }
+}
+
+function formatPolicyTimestamp(value: string): string {
+  return new Intl.DateTimeFormat('en-MY', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(value))
+}
+
 describe('AP Policies page', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -95,7 +116,7 @@ describe('AP Policies page', () => {
       within(policy).getByText('finance.controller@example.com')
     ).toBeInTheDocument()
     expect(
-      within(policy).getByText('07 Aug 2026, 06:30 pm')
+      within(policy).getByText(formatPolicyTimestamp('2026-08-07T10:30:00Z'))
     ).toHaveAttribute('dateTime', '2026-08-07T10:30:00Z')
 
     const inactive = screen.getByRole('article', {
@@ -113,7 +134,7 @@ describe('AP Policies page', () => {
     ).toBeInTheDocument()
     expect(within(summary).getByText('Duplicate invoice ceiling')).toBeInTheDocument()
     expect(
-      within(summary).getByText('07 Aug 2026, 06:30 pm')
+      within(summary).getByText(formatPolicyTimestamp('2026-08-07T10:30:00Z'))
     ).toHaveAttribute('dateTime', '2026-08-07T10:30:00Z')
   })
 
@@ -153,6 +174,77 @@ describe('AP Policies page', () => {
       })
     ).toBeInTheDocument()
     expect(getAPPolicies).toHaveBeenCalledTimes(2)
+  })
+
+  it('ignores an older Strict Mode success after the newer snapshot loads', async () => {
+    const older = deferred<APPolicyListResponse>()
+    const newer = deferred<APPolicyListResponse>()
+    const newerSnapshot: APPolicyListResponse = {
+      total: 1,
+      snapshot_label: 'Current AP governance snapshot',
+      items: [snapshot.items[1]],
+    }
+    vi.mocked(getAPPolicies)
+      .mockReturnValueOnce(older.promise)
+      .mockReturnValueOnce(newer.promise)
+
+    render(
+      <StrictMode>
+        <AIPoliciesPage />
+      </StrictMode>
+    )
+    await waitFor(() => expect(getAPPolicies).toHaveBeenCalledTimes(2))
+
+    await act(async () => {
+      newer.resolve(newerSnapshot)
+      await newer.promise
+    })
+    expect(
+      await screen.findByRole('article', { name: 'Unverified vendor route policy' })
+    ).toBeInTheDocument()
+
+    await act(async () => {
+      older.resolve(snapshot)
+      await older.promise
+    })
+    expect(
+      screen.queryByRole('article', { name: 'Duplicate invoice ceiling policy' })
+    ).not.toBeInTheDocument()
+    expect(
+      screen.getByRole('article', { name: 'Unverified vendor route policy' })
+    ).toBeInTheDocument()
+  })
+
+  it('ignores an older Strict Mode failure after the newer snapshot loads', async () => {
+    const older = deferred<APPolicyListResponse>()
+    const newer = deferred<APPolicyListResponse>()
+    vi.mocked(getAPPolicies)
+      .mockReturnValueOnce(older.promise)
+      .mockReturnValueOnce(newer.promise)
+
+    render(
+      <StrictMode>
+        <AIPoliciesPage />
+      </StrictMode>
+    )
+    await waitFor(() => expect(getAPPolicies).toHaveBeenCalledTimes(2))
+
+    await act(async () => {
+      newer.resolve(snapshot)
+      await newer.promise
+    })
+    expect(
+      await screen.findByRole('article', { name: 'Duplicate invoice ceiling policy' })
+    ).toBeInTheDocument()
+
+    await act(async () => {
+      older.reject(new Error('Stale AP policy failure'))
+      await older.promise.catch(() => undefined)
+    })
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(
+      screen.getByRole('article', { name: 'Duplicate invoice ceiling policy' })
+    ).toBeInTheDocument()
   })
 
   it('filters live policy cards by search and severity controls', async () => {
