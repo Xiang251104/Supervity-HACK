@@ -65,6 +65,7 @@ The `/data-manager` page loads the persisted API snapshot through typed helpers,
 
 - Keep routers thin and business state transitions in services.
 - Use Pydantic schemas at API boundaries.
+- Enforce `*.sh text eol=lf` in `.gitattributes` so Docker can execute Linux shell entrypoints from Windows clean clones without runtime conversion.
 - Do not hardcode invoice identifiers, policy thresholds, health states, or demo metrics.
 - Do not mutate immutable AI decision fields after insertion.
 - Write tests before production behavior changes and verify full suites after each slice.
@@ -88,6 +89,7 @@ Detailed behavior is specified in `docs/superpowers/specs/2026-08-04-ap-workbenc
 - The Next.js production build is part of the acceptance gate.
 - Data Manager backend tests cover status boundaries, safe redaction including arbitrary stored-message rejection, read-only probes, passive Outlook and Slack evidence, transaction rollback, authentication, and snapshot-versus-refresh behavior against PostgreSQL.
 - Data Manager frontend tests cover typed API calls, summaries, loading, empty, error, refresh, partial-failure, and authoritative refreshed rendering; full Vitest, production build, and strict TypeScript checks form the automated gate.
+- Repository-hygiene tests enforce the tracked shell-script LF policy and verify that the Linux startup entrypoint contains no CRLF bytes.
 
 The approved Data Manager design is documented in `docs/superpowers/specs/2026-08-04-ap-data-manager-design.md`.
 
