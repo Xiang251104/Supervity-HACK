@@ -14,8 +14,9 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.database import get_db
 from app.main import app
+from app.middleware import AuditMiddleware
 from app.models.ap import Policy, PolicyVersion
-from app.security import get_current_user
+from app.security import get_current_user, verify_access
 
 
 @dataclass
@@ -80,7 +81,11 @@ def policy_api(tmp_path: Path) -> PolicyApiHarness:
     Policy.__table__.create(engine)
     PolicyVersion.__table__.create(engine)
 
-    current_user: dict[str, Any] = {"email": "reviewer@example.com", "sub": "user-1"}
+    current_user: dict[str, Any] = {
+        "email": "reviewer@example.com",
+        "sub": "user-1",
+        "realm_access": {"roles": ["admin", "user"]},
+    }
 
     def override_get_db():
         db: Session = test_session()
@@ -92,16 +97,32 @@ def policy_api(tmp_path: Path) -> PolicyApiHarness:
     def override_get_current_user() -> dict[str, Any]:
         return current_user
 
+    def override_verify_access() -> None:
+        return None
+
+    original_dependency_overrides = app.dependency_overrides.copy()
+    original_user_middleware = app.user_middleware
+    original_middleware_stack = app.middleware_stack
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_current_user] = override_get_current_user
+    app.dependency_overrides[verify_access] = override_verify_access
+    app.user_middleware = [
+        middleware
+        for middleware in original_user_middleware
+        if middleware.cls is not AuditMiddleware
+    ]
+    app.middleware_stack = None
 
-    with TestClient(app) as client:
-        yield PolicyApiHarness(client, test_session, current_user)
-
-    app.dependency_overrides.pop(get_db, None)
-    app.dependency_overrides.pop(get_current_user, None)
-    engine.dispose()
-    database_path.unlink(missing_ok=True)
+    try:
+        with TestClient(app) as client:
+            yield PolicyApiHarness(client, test_session, current_user)
+    finally:
+        app.dependency_overrides.clear()
+        app.dependency_overrides.update(original_dependency_overrides)
+        app.user_middleware = original_user_middleware
+        app.middleware_stack = original_middleware_stack
+        engine.dispose()
+        database_path.unlink(missing_ok=True)
 
 
 def test_list_is_key_ordered_and_returns_public_fields_and_active_snapshot(
