@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { apiClient } from '@/lib/api-client'
+import type { APPolicy } from '@/types/ap-policies'
 
 import {
   formatPolicyValue,
@@ -86,6 +87,28 @@ describe('validatePolicyValue', () => {
     })
     expect(validatePolicyValue(policy, 'Review')).toMatchObject({ valid: false })
     expect(validatePolicyValue(policy, 'review ')).toMatchObject({ valid: false })
+  })
+
+  it('returns a validation error when an enum policy has no server options', () => {
+    const policy: APPolicy = {
+      key: 'TEST-ENUM',
+      name: 'Test enum',
+      description: '',
+      value_type: 'enum',
+      value: 'review',
+      options: null,
+      unit: null,
+      severity: 'advise',
+      active: true,
+      version: 1,
+      updated_at: null,
+      updated_by: null,
+    }
+
+    expect(validatePolicyValue(policy, 'review')).toEqual({
+      valid: false,
+      error: 'Policy value must match an available option',
+    })
   })
 
   it('accepts only booleans for boolean policies', () => {

@@ -1,10 +1,12 @@
 export type APPolicyValueType = 'number' | 'enum' | 'boolean' | 'date'
+export type APPolicyValue = string | number | boolean
 export type APPolicySeverity = 'block' | 'escalate' | 'advise'
 
 export interface APPolicyBase {
   key: string
   name: string
   description: string
+  options: APPolicyValue[] | null
   unit: string | null
   severity: APPolicySeverity
   active: boolean
@@ -16,25 +18,21 @@ export interface APPolicyBase {
 export interface APNumberPolicy extends APPolicyBase {
   value_type: 'number'
   value: number
-  options: null
 }
 
 export interface APEnumPolicy extends APPolicyBase {
   value_type: 'enum'
   value: string
-  options: string[]
 }
 
 export interface APBooleanPolicy extends APPolicyBase {
   value_type: 'boolean'
   value: boolean
-  options: null
 }
 
 export interface APDatePolicy extends APPolicyBase {
   value_type: 'date'
   value: string
-  options: null
 }
 
 export type APPolicy =
@@ -42,8 +40,6 @@ export type APPolicy =
   | APEnumPolicy
   | APBooleanPolicy
   | APDatePolicy
-
-export type APPolicyValue = APPolicy['value']
 
 export interface APPolicyListResponse {
   items: APPolicy[]

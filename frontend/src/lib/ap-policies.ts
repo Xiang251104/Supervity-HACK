@@ -37,7 +37,9 @@ export function validatePolicyValue(
     }
     case 'enum':
       return typeof rawValue === 'string' &&
-        policy.options?.some((option) => option === rawValue)
+        policy.options?.some(
+          (option) => typeof option === 'string' && option === rawValue
+        )
         ? { valid: true, value: rawValue }
         : invalidValue('Policy value must match an available option')
     case 'boolean':
