@@ -3,12 +3,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { PolicyList } from '@/components/ap/policies/policy-list'
+import { PolicyEditDialog } from '@/components/ap/policies/policy-edit-dialog'
 import { PolicySummary } from '@/components/ap/policies/policy-summary'
 import { Button } from '@/components/ui/button'
 import { Icons } from '@/components/ui/icons'
-import { getAPPolicies } from '@/lib/ap-policies'
+import { getAPPolicies, updateAPPolicy } from '@/lib/ap-policies'
 import { cn } from '@/lib/utils'
-import type { APPolicySeverity, APPolicyListResponse } from '@/types/ap-policies'
+import type { APPolicy, APPolicySeverity, APPolicyListResponse, APPolicyValue } from '@/types/ap-policies'
 
 type SeverityFilter = 'all' | APPolicySeverity
 
@@ -66,28 +67,41 @@ export default function AIPoliciesPage() {
   const [error, setError] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [severityFilter, setSeverityFilter] = useState<SeverityFilter>('all')
+  const [editingPolicy, setEditingPolicy] = useState<APPolicy | null>(null)
+  const [successMessage, setSuccessMessage] = useState<string | null>(null)
   const loadGeneration = useRef(0)
 
-  const loadPolicies = useCallback(async () => {
+  const loadPolicies = useCallback(async (): Promise<boolean> => {
     const generation = ++loadGeneration.current
     setLoading(true)
     setError(null)
     try {
       const response = await getAPPolicies()
-      if (generation !== loadGeneration.current) return
+      if (generation !== loadGeneration.current) return false
       setData(response)
+      return true
     } catch (caught) {
-      if (generation !== loadGeneration.current) return
+      if (generation !== loadGeneration.current) return false
       setData(null)
       setError(
         caught instanceof Error ? caught.message : 'AP policies are unavailable.'
       )
+      return false
     } finally {
       if (generation === loadGeneration.current) {
         setLoading(false)
       }
     }
   }, [])
+
+  const handlePolicySave = useCallback(async (policy: APPolicy, value: APPolicyValue, note: string) => {
+    await updateAPPolicy(policy.key, value, note)
+    const refreshed = await loadPolicies()
+    if (!refreshed) {
+      throw new Error('Policy was saved, but the authoritative list could not be refreshed.')
+    }
+    setSuccessMessage('Policy updated successfully')
+  }, [loadPolicies])
 
   useEffect(() => {
     void loadPolicies()
@@ -166,6 +180,12 @@ export default function AIPoliciesPage() {
             </p>
           ) : null}
 
+          {successMessage ? (
+            <p role='status' aria-live='polite' className='rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800'>
+              {successMessage}
+            </p>
+          ) : null}
+
           <PolicySummary
             policies={data.items}
             total={data.total}
@@ -216,11 +236,20 @@ export default function AIPoliciesPage() {
             {data.items.length === 0 || filteredPolicies.length === 0 ? (
               <EmptyPolicyState hasFilters={data.items.length > 0 && hasFilters} />
             ) : (
-              <PolicyList policies={filteredPolicies} />
+              <PolicyList policies={filteredPolicies} onEdit={setEditingPolicy} />
             )}
           </section>
         </>
       ) : null}
+
+      <PolicyEditDialog
+        policy={editingPolicy}
+        open={editingPolicy !== null}
+        onOpenChange={(open) => {
+          if (!open) setEditingPolicy(null)
+        }}
+        onSave={handlePolicySave}
+      />
     </div>
   )
 }

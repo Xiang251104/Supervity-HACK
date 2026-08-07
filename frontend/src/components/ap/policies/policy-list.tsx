@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
 import { formatPolicyValue } from '@/lib/ap-policies'
 import { cn } from '@/lib/utils'
 import type { APPolicy, APPolicySeverity } from '@/types/ap-policies'
@@ -49,7 +50,7 @@ function PolicyField({ label, children }: { label: string; children: ReactNode }
   )
 }
 
-function PolicyCard({ policy }: { policy: APPolicy }) {
+function PolicyCard({ policy, onEdit }: { policy: APPolicy; onEdit: (policy: APPolicy) => void }) {
   const severity = SEVERITY_PRESENTATION[policy.severity]
 
   return (
@@ -64,6 +65,15 @@ function PolicyCard({ policy }: { policy: APPolicy }) {
               <CardTitle className='mt-2'>{policy.name}</CardTitle>
             </div>
             <div className='flex flex-wrap items-center gap-2'>
+              <Button
+                type='button'
+                size='sm'
+                variant='outline'
+                onClick={() => onEdit(policy)}
+                aria-label={`Edit ${policy.name}`}
+              >
+                Edit
+              </Button>
               <span
                 className={cn(
                   'rounded-full border px-2.5 py-1 text-xs font-semibold',
@@ -118,11 +128,11 @@ function PolicyCard({ policy }: { policy: APPolicy }) {
   )
 }
 
-export function PolicyList({ policies }: { policies: APPolicy[] }) {
+export function PolicyList({ policies, onEdit }: { policies: APPolicy[]; onEdit: (policy: APPolicy) => void }) {
   return (
     <div className='grid gap-4 xl:grid-cols-2'>
       {policies.map((policy) => (
-        <PolicyCard key={policy.key} policy={policy} />
+        <PolicyCard key={policy.key} policy={policy} onEdit={onEdit} />
       ))}
     </div>
   )

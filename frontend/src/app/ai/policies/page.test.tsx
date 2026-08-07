@@ -3,16 +3,16 @@ import { StrictMode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import AIPoliciesPage from './page'
-import { getAPPolicies } from '@/lib/ap-policies'
-import type { APPolicyListResponse } from '@/types/ap-policies'
+import { getAPPolicies, updateAPPolicy } from '@/lib/ap-policies'
+import type { APPolicy, APPolicyListResponse } from '@/types/ap-policies'
 
 vi.mock('@/lib/ap-policies', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/ap-policies')>()
-  return { ...actual, getAPPolicies: vi.fn() }
+  return { ...actual, getAPPolicies: vi.fn(), updateAPPolicy: vi.fn() }
 })
 
 const snapshot: APPolicyListResponse = {
-  total: 3,
+  total: 4,
   snapshot_label: 'AP governance snapshot · 07 Aug 2026',
   items: [
     {
@@ -57,6 +57,20 @@ const snapshot: APPolicyListResponse = {
       updated_by: 'policy.bot@example.com',
       updated_at: '2026-08-05T08:00:00Z',
     },
+    {
+      key: 'payment_due_date',
+      name: 'Payment due date',
+      description: 'Blocks payments scheduled after the allowed due date.',
+      options: null,
+      value: '2026-08-31',
+      unit: null,
+      value_type: 'date',
+      severity: 'block',
+      active: true,
+      version: 1,
+      updated_by: 'policy.bot@example.com',
+      updated_at: '2026-08-05T08:00:00Z',
+    },
   ],
 }
 
@@ -83,7 +97,16 @@ function formatPolicyTimestamp(value: string): string {
 describe('AP Policies page', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.stubGlobal(
+      'ResizeObserver',
+      class ResizeObserver {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      }
+    )
     vi.mocked(getAPPolicies).mockResolvedValue(snapshot)
+    vi.mocked(updateAPPolicy).mockResolvedValue(snapshot.items[0])
   })
 
   it('shows a labelled loading state while AP policies are requested', () => {
@@ -127,8 +150,8 @@ describe('AP Policies page', () => {
     expect(within(inactive).getByText('Escalate')).toBeInTheDocument()
 
     const summary = screen.getByRole('region', { name: 'Policy summary' })
+    expect(within(summary).getByText('4')).toBeInTheDocument()
     expect(within(summary).getByText('3')).toBeInTheDocument()
-    expect(within(summary).getByText('2')).toBeInTheDocument()
     expect(
       within(summary).getByText('AP governance snapshot · 07 Aug 2026')
     ).toBeInTheDocument()
@@ -288,7 +311,167 @@ describe('AP Policies page', () => {
     ).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'All policies' }))
-    expect(screen.getAllByRole('article')).toHaveLength(3)
+    expect(screen.getAllByRole('article')).toHaveLength(4)
+  })
+
+  it('opens the appropriate type-specific editor for each live policy', async () => {
+    render(<AIPoliciesPage />)
+
+    await screen.findByRole('article', { name: 'Duplicate invoice ceiling policy' })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Duplicate invoice ceiling' }))
+    expect(screen.getByLabelText('Policy value')).toHaveAttribute('type', 'number')
+    expect(screen.getByLabelText('Policy value')).toHaveAttribute('step', 'any')
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Unverified vendor route' }))
+    const enumEditor = screen.getByLabelText('Policy value')
+    expect(enumEditor.tagName).toBe('SELECT')
+    expect(within(enumEditor).getAllByRole('option').map((option) => option.textContent)).toEqual([
+      'manager',
+      'director',
+    ])
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Weekend payment review' }))
+    expect(screen.getByRole('switch', { name: 'Policy value' })).toBeChecked()
+    fireEvent.click(screen.getByRole('button', { name: 'Close' }))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Payment due date' }))
+    expect(screen.getByLabelText('Policy value')).toHaveAttribute('type', 'date')
+  })
+
+  it('sends number decimals and an optional note in the PATCH payload', async () => {
+    render(<AIPoliciesPage />)
+
+    await screen.findByRole('article', { name: 'Duplicate invoice ceiling policy' })
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Duplicate invoice ceiling' }))
+    fireEvent.change(screen.getByLabelText('Policy value'), { target: { value: '5000.25' } })
+    fireEvent.change(screen.getByLabelText(/Change note/), { target: { value: '  temporary threshold  ' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save policy' }))
+
+    await waitFor(() =>
+      expect(updateAPPolicy).toHaveBeenCalledWith(
+        'duplicate_invoice_ceiling',
+        5000.25,
+        '  temporary threshold  '
+      )
+    )
+  })
+
+  it('blocks invalid number values locally with a targeted message', async () => {
+    render(<AIPoliciesPage />)
+
+    await screen.findByRole('article', { name: 'Duplicate invoice ceiling policy' })
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Duplicate invoice ceiling' }))
+    fireEvent.change(screen.getByLabelText('Policy value'), { target: { value: 'not-a-number' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save policy' }))
+
+    expect(await screen.findByText('Policy value must be a number')).toBeInTheDocument()
+    expect(updateAPPolicy).not.toHaveBeenCalled()
+  })
+
+  it('blocks invalid date values locally with a targeted message', async () => {
+    render(<AIPoliciesPage />)
+
+    await screen.findByRole('article', { name: 'Payment due date policy' })
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Payment due date' }))
+    fireEvent.change(screen.getByLabelText('Policy value'), { target: { value: '2026-02-29' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Save policy' }))
+
+    expect(
+      await screen.findByText('Policy date must be a valid YYYY-MM-DD date')
+    ).toBeInTheDocument()
+    expect(updateAPPolicy).not.toHaveBeenCalled()
+  })
+
+  it('fails closed when enum option metadata is malformed', async () => {
+    vi.mocked(getAPPolicies).mockResolvedValue({
+      ...snapshot,
+      items: [{ ...snapshot.items[1], options: null }],
+    })
+    render(<AIPoliciesPage />)
+
+    await screen.findByRole('article', { name: 'Unverified vendor route policy' })
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Unverified vendor route' }))
+    expect(screen.queryByLabelText('Policy value')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Save policy' }))
+
+    expect(
+      await screen.findByText('Policy value must match an available option')
+    ).toBeInTheDocument()
+    expect(updateAPPolicy).not.toHaveBeenCalled()
+  })
+
+  it('sends boolean values from the policy switch', async () => {
+    render(<AIPoliciesPage />)
+
+    await screen.findByRole('article', { name: 'Weekend payment review policy' })
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Weekend payment review' }))
+    fireEvent.click(screen.getByRole('switch', { name: 'Policy value' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save policy' }))
+
+    await waitFor(() =>
+      expect(updateAPPolicy).toHaveBeenCalledWith(
+        'weekend_payment_review',
+        false,
+        ''
+      )
+    )
+  })
+
+  it('disables duplicate save submission while the PATCH is pending', async () => {
+    const update = deferred<typeof snapshot.items[0]>()
+    vi.mocked(updateAPPolicy).mockReturnValue(update.promise)
+    render(<AIPoliciesPage />)
+
+    await screen.findByRole('article', { name: 'Duplicate invoice ceiling policy' })
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Duplicate invoice ceiling' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save policy' }))
+
+    expect(screen.getByRole('button', { name: 'Saving policy' })).toBeDisabled()
+    expect(updateAPPolicy).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      update.resolve(snapshot.items[0])
+      await update.promise
+    })
+  })
+
+  it('keeps the editor open and reports server PATCH failures', async () => {
+    vi.mocked(updateAPPolicy).mockRejectedValue(new Error('Version conflict'))
+    render(<AIPoliciesPage />)
+
+    await screen.findByRole('article', { name: 'Duplicate invoice ceiling policy' })
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Duplicate invoice ceiling' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save policy' }))
+
+    expect(await screen.findByText('Version conflict')).toBeInTheDocument()
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+  })
+
+  it('refetches and displays the authoritative server snapshot after saving', async () => {
+    const duplicatePolicy = snapshot.items[0] as Extract<APPolicy, { value_type: 'number' }>
+    const authoritativeSnapshot: APPolicyListResponse = {
+      ...snapshot,
+      snapshot_label: 'Authoritative policy snapshot',
+      items: [{ ...duplicatePolicy, value: 7250 }, ...snapshot.items.slice(1)],
+    }
+    vi.mocked(getAPPolicies)
+      .mockResolvedValueOnce(snapshot)
+      .mockResolvedValueOnce(authoritativeSnapshot)
+    vi.mocked(updateAPPolicy).mockResolvedValue({ ...duplicatePolicy, value: 9999 })
+    render(<AIPoliciesPage />)
+
+    await screen.findByRole('article', { name: 'Duplicate invoice ceiling policy' })
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Duplicate invoice ceiling' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save policy' }))
+
+    await waitFor(() => expect(getAPPolicies).toHaveBeenCalledTimes(2))
+    expect(await screen.findByText('7250 MYR')).toBeInTheDocument()
+    expect(screen.queryByText('9999 MYR')).not.toBeInTheDocument()
+    expect(screen.getByText('Policy updated successfully')).toBeInTheDocument()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
   it('does not retain the generic policy-builder experiences', async () => {
