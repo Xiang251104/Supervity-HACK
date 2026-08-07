@@ -84,6 +84,9 @@ function isCanonicalDate(rawValue: unknown): rawValue is string {
     return false
   }
 
+  const year = Number(rawValue.slice(0, 4))
+  if (year < 1 || year > 9999) return false
+
   const parsed = new Date(`${rawValue}T00:00:00.000Z`)
   return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === rawValue
 }

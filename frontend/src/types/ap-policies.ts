@@ -1,14 +1,10 @@
 export type APPolicyValueType = 'number' | 'enum' | 'boolean' | 'date'
-export type APPolicyValue = string | number | boolean
 export type APPolicySeverity = 'block' | 'escalate' | 'advise'
 
-export interface APPolicy {
+export interface APPolicyBase {
   key: string
   name: string
   description: string
-  value_type: APPolicyValueType
-  value: APPolicyValue
-  options: APPolicyValue[] | null
   unit: string | null
   severity: APPolicySeverity
   active: boolean
@@ -16,6 +12,38 @@ export interface APPolicy {
   updated_at: string | null
   updated_by: string | null
 }
+
+export interface APNumberPolicy extends APPolicyBase {
+  value_type: 'number'
+  value: number
+  options: null
+}
+
+export interface APEnumPolicy extends APPolicyBase {
+  value_type: 'enum'
+  value: string
+  options: string[]
+}
+
+export interface APBooleanPolicy extends APPolicyBase {
+  value_type: 'boolean'
+  value: boolean
+  options: null
+}
+
+export interface APDatePolicy extends APPolicyBase {
+  value_type: 'date'
+  value: string
+  options: null
+}
+
+export type APPolicy =
+  | APNumberPolicy
+  | APEnumPolicy
+  | APBooleanPolicy
+  | APDatePolicy
+
+export type APPolicyValue = APPolicy['value']
 
 export interface APPolicyListResponse {
   items: APPolicy[]
@@ -43,10 +71,7 @@ export interface APPolicyHistoryResponse {
   total: number
 }
 
-export interface APPolicyValidationTarget {
-  value_type: APPolicyValueType
-  options: readonly APPolicyValue[] | null
-}
+export type APPolicyValidationTarget = Pick<APPolicy, 'value_type' | 'options'>
 
 export type APPolicyValueValidationResult =
   | { valid: true; value: APPolicyValue }

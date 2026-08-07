@@ -106,6 +106,7 @@ describe('validatePolicyValue', () => {
     })
     expect(validatePolicyValue(policy, '2026-02-30')).toMatchObject({ valid: false })
     expect(validatePolicyValue(policy, '2026-2-28')).toMatchObject({ valid: false })
+    expect(validatePolicyValue(policy, '0000-01-01')).toMatchObject({ valid: false })
     expect(validatePolicyValue(policy, '2026-02-28T00:00:00Z')).toMatchObject({
       valid: false,
     })
