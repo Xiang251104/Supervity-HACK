@@ -50,6 +50,22 @@ AP human review uses the existing `Decision`, `WorkbenchItem`, and `RunEvent` mo
 - Public error categories are exactly `authentication_failure`, `timeout`, `rate_limited`, and `connector_failure`, or `null`. An unrecognized stored error on a `down` row is reduced to `connector_failure`; it is omitted for other statuses.
 - Public `detail.message` is returned only when it exactly matches the router's code-owned allowlist of the 12 fixed messages emitted by `IntegrationHealthService`; an arbitrary stored string fails closed. Public `detail.http_status` is retained only when its runtime type is a true integer. The router drops every other stored key and value; internal database IDs, raw connector/event payloads, credentials, authorization headers, webhook URLs, response bodies, invoice identifiers, and complete bank data are not returned.
 
+### AP Policies API
+
+- `Policy` and append-only `PolicyVersion` remain the persistent AP policy model. `app/services/policies.py` owns policy-engine operations and the existing transactional `update_policy()` path, which increments the version, records history, and commits only when the normalized value changes.
+- `app/schemas/ap_policies.py` defines the public list, update, and history contracts. `app/routers/ap_policies.py` is a thin HTTP adapter: it loads policy metadata, validates and normalizes the requested value, reuses `update_policy()`, and serializes authoritative persisted rows.
+- `GET /api/ap/policies` returns key-ordered policy items and an active-policy snapshot label built with the same snapshot semantics as the runtime policy engine. `PATCH /api/ap/policies/{key}` returns the updated representation, records the authenticated actor and optional note, and treats a same-value request as a successful no-op. `GET /api/ap/policies/{key}/history` returns append-only history newest first; known policies without history return an empty collection.
+- An unknown key returns HTTP 404. A value that fails the four-type contract, is non-finite, is an invalid date, or is not an allowed enum option returns HTTP 422. Authentication failures return HTTP 401 and authenticated principals outside `admin` or `user` return HTTP 403 through the existing authorization map.
+- No migration was required: the existing AP policy and policy-version migration schema supports this slice. The API does not create or delete definitions or edit policy metadata.
+
+### AP Policies Frontend
+
+- `frontend/src/types/ap-policies.ts` contains API types and `frontend/src/lib/ap-policies.ts` contains typed API helpers, display formatting, and pure client-side validation. The `/ai/policies` route is implemented by `frontend/src/app/ai/policies/page.tsx` with focused list, summary, edit-dialog, and history-dialog components in `frontend/src/components/ap/policies/`.
+- The page renders live list and summary data, search and severity filtering, explicit loading/empty/error/retry states, and editors selected by policy type. It has no generic policy-builder, AI creation, or permission-matrix surface.
+- A successful PATCH closes the editor only after receiving the server response and then refetches the list; it does not maintain optimistic business state. Save errors and validation errors leave the editor open.
+- History is loaded on demand and is intentionally isolated from the main list state, with its own empty, error, retry, and reopen-refetch behavior.
+- Focused backend tests cover list/snapshot, all four types, validation, authorization behavior, actor/note, no-op/version/history, and history ordering. Focused frontend tests cover helpers and page behavior including list states, filtering, type-specific editing, authoritative refetch, and history isolation.
+
 ## Frontend Structure
 
 - Route pages live under `frontend/src/app/`.

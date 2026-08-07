@@ -38,6 +38,7 @@ from .middleware import AuditMiddleware
 from .routers import (
     admin_router,
     ap_data_manager_router,
+    ap_policies_router,
     ap_workbench_router,
     audit_router,
     auth_router,
@@ -155,6 +156,9 @@ api_router.include_router(ap_workbench_router)
 
 # AP integration health registry
 api_router.include_router(ap_data_manager_router)
+
+# Editable AP policy registry and version history
+api_router.include_router(ap_policies_router)
 
 # Item CRUD operations
 api_router.include_router(items_router)

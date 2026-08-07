@@ -13,6 +13,7 @@
 - AP Workbench Command Center page with filtering, evidence inspection, protected-value visibility, and Approve/Reject/Request Information actions.
 - Reviewer actions preserve the AI verdict and append a separate `human_action` audit event.
 - AP Data Manager service, authenticated snapshot/refresh API, and persisted integration-health page for Outlook, Supabase, Slack, and Supervity.
+- AP Policies Console: authenticated list, typed value updates, active snapshot label, no-op-safe append-only version history, and `/ai/policies` replacement without generic policy-builder content.
 - Tracked Git EOL policy for Linux shell entrypoints; `start_gunicorn.sh` is stored and checked out as LF on Windows clean clones.
 
 ## Automated Verification
@@ -22,10 +23,14 @@
 - Next.js production build and subsequent `tsc --noEmit`: passed sequentially; the known warnings below remain.
 - `git diff --check`: passed. The filename-only high-confidence secret scan excluding `node_modules` and `.next` returned no matches.
 - Final unrelated-change review found no credentials, webhook URLs, sample identifiers, fake/demo health, or hardcoded live integration status. No implementation files were staged or committed.
+- AP Policies focused backend suites (`tests/test_ap_policies.py` and `tests/test_ap_policies_api.py`) passed: 60 tests with five existing dependency/deprecation warnings using the isolated SQLite test setup.
+- AP Policies focused frontend suite passed: 45 tests. Complete frontend Vitest passed: six files and 69 tests. Strict TypeScript passed, and the Next.js production build exited 0 with only the pre-existing unrelated Insights unused-variable and chart-size warnings.
+- AP Policies `git diff --check` and targeted runtime demo/credential scans passed. The full backend `pytest -q` run with real PostgreSQL remains not run and blocked because `DATABASE_URL` is absent; it is not recorded as passed.
 
 ## In Progress
 
 - Final standalone regression checks for Bank Change Verification.
+- PostgreSQL-backed full-suite verification for AP Policies, blocked until a dedicated `DATABASE_URL` is configured.
 
 ## Pending
 
@@ -119,5 +124,5 @@ Task 8 in `docs/superpowers/plans/2026-08-04-ap-data-manager-implementation.md` 
 
 ## Current Next Step
 
-Finish the standalone Bank Change Verification regression, collect the real Outlook, Slack, Supabase, and Supervity evidence above, then complete Workbench Auto-run acceptance and the clean-clone/demo rehearsal.
+The remaining AP Policies verification prerequisite is the PostgreSQL-backed backend full suite: configure a dedicated `DATABASE_URL` and run `pytest -q`. Afterwards, finish the standalone Bank Change Verification regression, collect the real Outlook, Slack, Supabase, and Supervity evidence above, and complete Workbench Auto-run acceptance and the clean-clone/demo rehearsal.
 

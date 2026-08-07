@@ -39,6 +39,19 @@ Build an AP Control Tower in which a Supervity Orchestrator coordinates five spe
 - Return a diagnostic message only when it exactly matches the code-owned, service-generated safe-message vocabulary; arbitrary stored strings must fail closed.
 - Restrict both Data Manager endpoints to authenticated users with the `admin` or `user` role.
 
+## AP Policies Console Requirements
+
+- Replace `/ai/policies` generic demonstration content with a focused AP Policies Console backed by live policy API data.
+- Restrict policy listing, updates, and history to authenticated principals with the `admin` or `user` role.
+- Display the current AP policy list with its stable policy fields and active-policy snapshot label, including key, description, value, unit, value type, severity, active state, version, and update metadata.
+- Validate edits against the persisted policy type: `number`, `enum`, `boolean`, or `date`; enum values must match the stored options.
+- Return HTTP 404 for an unknown policy key. Return HTTP 422 for an invalid typed value, non-finite number, invalid date, or enum value outside the stored options.
+- Record the authenticated actor and an optional change note for a real value change; a same-value update succeeds without a version increment or history row.
+- Preserve append-only, newest-first version history with previous and new values, actor, timestamp, note, and version.
+- Provide loading, empty, error/retry, filtering, type-specific editing, saving, validation feedback, and on-demand history states in the UI.
+- Close an edit dialog only after a successful authoritative PATCH response and refetch the list; history remains isolated from list failures and refetches when reopened.
+- Do not add policy creation, deletion, or metadata editing. Do not retain the generic builder, AI creation, or permission-matrix content on this route.
+
 ## Quality Requirements
 
 - Backend behavior is covered by automated tests.

@@ -18,8 +18,9 @@ decisions can be checked directly against the organizer's expected approvals.
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import TYPE_CHECKING, Any
 
 # The gate logic below is pure — it must stay importable and unit-testable without a
@@ -89,6 +90,50 @@ class PolicySnapshot:
             "default_kostl": self.get("DEFAULT-KOSTL", "CC100"),
             "retro_po_policy": self.get("RETRO-PO", "advisory"),
         }
+
+
+def normalize_policy_value(
+    value_type: str,
+    options: list[Any] | None,
+    candidate: Any,
+) -> Any:
+    """Validate a policy value for JSON persistence without coercing it."""
+    if value_type == "number":
+        if isinstance(candidate, bool) or not isinstance(candidate, (int, float)):
+            raise ValueError("Policy value must be a number, not a boolean or string")
+        if isinstance(candidate, float) and not math.isfinite(candidate):
+            raise ValueError("Policy number must be finite")
+        return candidate
+
+    if value_type == "enum":
+        allowed_options = options if isinstance(options, list) else []
+        if (
+            type(candidate) is not str
+            or not all(type(option) is str for option in allowed_options)
+            or candidate not in allowed_options
+        ):
+            raise ValueError(
+                f"{candidate!r} is not an allowed enum value. Allowed: {options or []}"
+            )
+        return candidate
+
+    if value_type == "boolean":
+        if type(candidate) is not bool:
+            raise ValueError("Policy value must be a JSON boolean")
+        return candidate
+
+    if value_type == "date":
+        if not isinstance(candidate, str):
+            raise ValueError("Policy date must be a YYYY-MM-DD string")
+        try:
+            parsed = date.fromisoformat(candidate)
+        except ValueError as exc:
+            raise ValueError("Policy date must be a valid YYYY-MM-DD date") from exc
+        if parsed.isoformat() != candidate:
+            raise ValueError("Policy date must be a valid YYYY-MM-DD date")
+        return candidate
+
+    raise ValueError(f"Unknown policy value type: {value_type!r}")
 
 
 def build_snapshot(db: "Session") -> PolicySnapshot:
