@@ -3,12 +3,17 @@ import { StrictMode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import AIPoliciesPage from './page'
-import { getAPPolicies, updateAPPolicy } from '@/lib/ap-policies'
-import type { APPolicy, APPolicyListResponse } from '@/types/ap-policies'
+import { getAPPolicies, getAPPolicyHistory, updateAPPolicy } from '@/lib/ap-policies'
+import type { APPolicy, APPolicyHistoryResponse, APPolicyListResponse } from '@/types/ap-policies'
 
 vi.mock('@/lib/ap-policies', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/ap-policies')>()
-  return { ...actual, getAPPolicies: vi.fn(), updateAPPolicy: vi.fn() }
+  return {
+    ...actual,
+    getAPPolicies: vi.fn(),
+    getAPPolicyHistory: vi.fn(),
+    updateAPPolicy: vi.fn(),
+  }
 })
 
 const snapshot: APPolicyListResponse = {
@@ -94,6 +99,29 @@ function formatPolicyTimestamp(value: string): string {
   }).format(new Date(value))
 }
 
+const duplicateHistory: APPolicyHistoryResponse = {
+  policy_key: 'duplicate_invoice_ceiling',
+  total: 2,
+  items: [
+    {
+      version: 8,
+      value: 7250,
+      previous_value: 5000,
+      changed_by: 'ap.manager@example.com',
+      changed_at: '2026-08-07T12:45:00Z',
+      note: 'Approved seasonal increase',
+    },
+    {
+      version: 7,
+      value: 5000,
+      previous_value: 4500,
+      changed_by: 'finance.controller@example.com',
+      changed_at: '2026-08-07T10:30:00Z',
+      note: null,
+    },
+  ],
+}
+
 describe('AP Policies page', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -106,6 +134,7 @@ describe('AP Policies page', () => {
       }
     )
     vi.mocked(getAPPolicies).mockResolvedValue(snapshot)
+    vi.mocked(getAPPolicyHistory).mockResolvedValue(duplicateHistory)
     vi.mocked(updateAPPolicy).mockResolvedValue(snapshot.items[0])
   })
 
@@ -159,6 +188,127 @@ describe('AP Policies page', () => {
     expect(
       within(summary).getByText(formatPolicyTimestamp('2026-08-07T10:30:00Z'))
     ).toHaveAttribute('dateTime', '2026-08-07T10:30:00Z')
+  })
+
+  it('loads policy history only when its accessible action is selected and preserves server order', async () => {
+    render(<AIPoliciesPage />)
+
+    await screen.findByRole('article', { name: 'Duplicate invoice ceiling policy' })
+    expect(getAPPolicyHistory).not.toHaveBeenCalled()
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'View history for Duplicate invoice ceiling' })
+    )
+
+    const dialog = await screen.findByRole('dialog', { name: 'History for Duplicate invoice ceiling' })
+    expect(getAPPolicyHistory).toHaveBeenCalledWith('duplicate_invoice_ceiling')
+    expect(within(dialog).getByText('Version 8')).toBeInTheDocument()
+    expect(within(dialog).getAllByText('5000 MYR')).toHaveLength(2)
+    expect(within(dialog).getByText('7250 MYR')).toBeInTheDocument()
+    expect(within(dialog).getByText('ap.manager@example.com')).toBeInTheDocument()
+    expect(
+      within(dialog).getByText(formatPolicyTimestamp('2026-08-07T12:45:00Z'))
+    ).toHaveAttribute('dateTime', '2026-08-07T12:45:00Z')
+    expect(within(dialog).getByText('Approved seasonal increase')).toBeInTheDocument()
+
+    const versions = within(dialog).getAllByText(/Version [78]/)
+    expect(versions.map((version) => version.textContent)).toEqual(['Version 8', 'Version 7'])
+  })
+
+  it('shows a truthful empty state when the selected policy has no history', async () => {
+    vi.mocked(getAPPolicyHistory).mockResolvedValue({
+      policy_key: 'weekend_payment_review',
+      total: 0,
+      items: [],
+    })
+    render(<AIPoliciesPage />)
+
+    await screen.findByRole('article', { name: 'Weekend payment review policy' })
+    fireEvent.click(
+      screen.getByRole('button', { name: 'View history for Weekend payment review' })
+    )
+
+    expect(await screen.findByText('No policy history is available')).toBeInTheDocument()
+    expect(getAPPolicyHistory).toHaveBeenCalledWith('weekend_payment_review')
+  })
+
+  it('isolates history failures and retries without removing the live policy list', async () => {
+    vi.mocked(getAPPolicyHistory)
+      .mockRejectedValueOnce(new Error('History service unavailable'))
+      .mockResolvedValueOnce(duplicateHistory)
+    render(<AIPoliciesPage />)
+
+    const card = await screen.findByRole('article', { name: 'Duplicate invoice ceiling policy' })
+    fireEvent.click(
+      within(card).getByRole('button', { name: 'View history for Duplicate invoice ceiling' })
+    )
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('History service unavailable')
+    expect(
+      screen.getByRole('article', {
+        name: 'Duplicate invoice ceiling policy',
+        hidden: true,
+      })
+    ).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Retry loading policy history' }))
+
+    expect(await screen.findByText('Approved seasonal increase')).toBeInTheDocument()
+    expect(getAPPolicyHistory).toHaveBeenCalledTimes(2)
+    fireEvent.click(
+      within(screen.getByRole('dialog')).getAllByRole('button', { name: 'Close' })[0]
+    )
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    expect(
+      screen.getByRole('article', { name: 'Duplicate invoice ceiling policy' })
+    ).toBeInTheDocument()
+  })
+
+  it('ignores stale history responses after closing and selecting another policy', async () => {
+    const older = deferred<APPolicyHistoryResponse>()
+    const newer = deferred<APPolicyHistoryResponse>()
+    vi.mocked(getAPPolicyHistory)
+      .mockReturnValueOnce(older.promise)
+      .mockReturnValueOnce(newer.promise)
+    render(<AIPoliciesPage />)
+
+    await screen.findByRole('article', { name: 'Duplicate invoice ceiling policy' })
+    fireEvent.click(
+      screen.getByRole('button', { name: 'View history for Duplicate invoice ceiling' })
+    )
+    fireEvent.click(
+      within(screen.getByRole('dialog')).getAllByRole('button', { name: 'Close' })[0]
+    )
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    fireEvent.click(
+      screen.getByRole('button', { name: 'View history for Unverified vendor route' })
+    )
+
+    const newerHistory: APPolicyHistoryResponse = {
+      policy_key: 'unverified_vendor_route',
+      total: 1,
+      items: [
+        {
+          version: 4,
+          value: 'director',
+          previous_value: 'manager',
+          changed_by: 'ap.lead@example.com',
+          changed_at: '2026-08-07T11:00:00Z',
+          note: null,
+        },
+      ],
+    }
+    await act(async () => {
+      newer.resolve(newerHistory)
+      await newer.promise
+    })
+    expect(await screen.findByText('director')).toBeInTheDocument()
+
+    await act(async () => {
+      older.resolve(duplicateHistory)
+      await older.promise
+    })
+    expect(screen.queryByText('Approved seasonal increase')).not.toBeInTheDocument()
+    expect(screen.getByText('director')).toBeInTheDocument()
   })
 
   it('shows a truthful empty state for an empty API response', async () => {
@@ -509,6 +659,55 @@ describe('AP Policies page', () => {
     expect(screen.queryByText('9999 MYR')).not.toBeInTheDocument()
     expect(screen.getByText('Policy updated successfully')).toBeInTheDocument()
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('refreshes the selected policy history from the server after an edit succeeds', async () => {
+    const duplicatePolicy = snapshot.items[0] as Extract<APPolicy, { value_type: 'number' }>
+    const authoritativeSnapshot: APPolicyListResponse = {
+      ...snapshot,
+      items: [{ ...duplicatePolicy, value: 7250 }, ...snapshot.items.slice(1)],
+    }
+    const refreshedHistory: APPolicyHistoryResponse = {
+      ...duplicateHistory,
+      total: 1,
+      items: [
+        {
+          version: 8,
+          value: 7250,
+          previous_value: 5000,
+          changed_by: 'finance.controller@example.com',
+          changed_at: '2026-08-07T13:00:00Z',
+          note: 'Server-confirmed value',
+        },
+      ],
+    }
+    vi.mocked(getAPPolicies)
+      .mockResolvedValueOnce(snapshot)
+      .mockResolvedValueOnce(authoritativeSnapshot)
+    vi.mocked(getAPPolicyHistory)
+      .mockResolvedValueOnce(duplicateHistory)
+      .mockResolvedValueOnce(refreshedHistory)
+    vi.mocked(updateAPPolicy).mockResolvedValue({ ...duplicatePolicy, value: 9999 })
+    render(<AIPoliciesPage />)
+
+    await screen.findByRole('article', { name: 'Duplicate invoice ceiling policy' })
+    fireEvent.click(
+      screen.getByRole('button', { name: 'View history for Duplicate invoice ceiling' })
+    )
+    expect(await screen.findByText('Approved seasonal increase')).toBeInTheDocument()
+
+    fireEvent.click(
+      screen.getByRole('button', {
+        name: 'Edit Duplicate invoice ceiling',
+        hidden: true,
+      })
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Save policy' }))
+
+    expect(await screen.findByText('Server-confirmed value')).toBeInTheDocument()
+    expect(getAPPolicyHistory).toHaveBeenCalledTimes(2)
+    expect(screen.queryByText('Approved seasonal increase')).not.toBeInTheDocument()
+    expect(screen.queryByText('9999 MYR')).not.toBeInTheDocument()
   })
 
   it('closes after PATCH success before starting the authoritative refetch', async () => {

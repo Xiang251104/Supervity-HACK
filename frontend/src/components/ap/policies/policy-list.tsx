@@ -50,7 +50,15 @@ function PolicyField({ label, children }: { label: string; children: ReactNode }
   )
 }
 
-function PolicyCard({ policy, onEdit }: { policy: APPolicy; onEdit: (policy: APPolicy) => void }) {
+function PolicyCard({
+  policy,
+  onEdit,
+  onViewHistory,
+}: {
+  policy: APPolicy
+  onEdit: (policy: APPolicy) => void
+  onViewHistory: (policy: APPolicy) => void
+}) {
   const severity = SEVERITY_PRESENTATION[policy.severity]
 
   return (
@@ -73,6 +81,15 @@ function PolicyCard({ policy, onEdit }: { policy: APPolicy; onEdit: (policy: APP
                 aria-label={`Edit ${policy.name}`}
               >
                 Edit
+              </Button>
+              <Button
+                type='button'
+                size='sm'
+                variant='outline'
+                onClick={() => onViewHistory(policy)}
+                aria-label={`View history for ${policy.name}`}
+              >
+                View history
               </Button>
               <span
                 className={cn(
@@ -128,11 +145,24 @@ function PolicyCard({ policy, onEdit }: { policy: APPolicy; onEdit: (policy: APP
   )
 }
 
-export function PolicyList({ policies, onEdit }: { policies: APPolicy[]; onEdit: (policy: APPolicy) => void }) {
+export function PolicyList({
+  policies,
+  onEdit,
+  onViewHistory,
+}: {
+  policies: APPolicy[]
+  onEdit: (policy: APPolicy) => void
+  onViewHistory: (policy: APPolicy) => void
+}) {
   return (
     <div className='grid gap-4 xl:grid-cols-2'>
       {policies.map((policy) => (
-        <PolicyCard key={policy.key} policy={policy} onEdit={onEdit} />
+        <PolicyCard
+          key={policy.key}
+          policy={policy}
+          onEdit={onEdit}
+          onViewHistory={onViewHistory}
+        />
       ))}
     </div>
   )

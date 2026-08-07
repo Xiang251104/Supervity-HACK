@@ -4,12 +4,19 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { PolicyList } from '@/components/ap/policies/policy-list'
 import { PolicyEditDialog } from '@/components/ap/policies/policy-edit-dialog'
+import { PolicyHistoryDialog } from '@/components/ap/policies/policy-history-dialog'
 import { PolicySummary } from '@/components/ap/policies/policy-summary'
 import { Button } from '@/components/ui/button'
 import { Icons } from '@/components/ui/icons'
-import { getAPPolicies, updateAPPolicy } from '@/lib/ap-policies'
+import { getAPPolicies, getAPPolicyHistory, updateAPPolicy } from '@/lib/ap-policies'
 import { cn } from '@/lib/utils'
-import type { APPolicy, APPolicySeverity, APPolicyListResponse, APPolicyValue } from '@/types/ap-policies'
+import type {
+  APPolicy,
+  APPolicySeverity,
+  APPolicyListResponse,
+  APPolicyValue,
+  APPolicyVersion,
+} from '@/types/ap-policies'
 
 type SeverityFilter = 'all' | APPolicySeverity
 
@@ -68,8 +75,13 @@ export default function AIPoliciesPage() {
   const [searchQuery, setSearchQuery] = useState('')
   const [severityFilter, setSeverityFilter] = useState<SeverityFilter>('all')
   const [editingPolicy, setEditingPolicy] = useState<APPolicy | null>(null)
+  const [historyPolicy, setHistoryPolicy] = useState<APPolicy | null>(null)
+  const [historyItems, setHistoryItems] = useState<APPolicyVersion[]>([])
+  const [historyLoading, setHistoryLoading] = useState(false)
+  const [historyError, setHistoryError] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
   const loadGeneration = useRef(0)
+  const historyGeneration = useRef(0)
 
   const loadPolicies = useCallback(async (): Promise<boolean> => {
     const generation = ++loadGeneration.current
@@ -98,22 +110,66 @@ export default function AIPoliciesPage() {
     await updateAPPolicy(policy.key, value, note.trim())
   }, [])
 
+  const loadHistory = useCallback(async (policy: APPolicy): Promise<void> => {
+    const generation = ++historyGeneration.current
+    setHistoryLoading(true)
+    setHistoryError(null)
+    try {
+      const response = await getAPPolicyHistory(policy.key)
+      if (generation !== historyGeneration.current) return
+      setHistoryItems(response.items)
+    } catch (caught) {
+      if (generation !== historyGeneration.current) return
+      setHistoryItems([])
+      setHistoryError(
+        caught instanceof Error ? caught.message : 'Policy history is unavailable.'
+      )
+    } finally {
+      if (generation === historyGeneration.current) {
+        setHistoryLoading(false)
+      }
+    }
+  }, [])
+
   const handlePolicySaved = useCallback(async () => {
+    const policyToRefresh =
+      editingPolicy && historyPolicy?.key === editingPolicy.key ? historyPolicy : null
+    if (policyToRefresh) {
+      void loadHistory(policyToRefresh)
+    }
     const refreshed = await loadPolicies()
     if (refreshed) {
       setSuccessMessage('Policy updated successfully')
     }
-  }, [loadPolicies])
+  }, [editingPolicy, historyPolicy, loadHistory, loadPolicies])
 
   const handlePolicyEdit = useCallback((policy: APPolicy) => {
     setSuccessMessage(null)
     setEditingPolicy(policy)
   }, [])
 
+  const handlePolicyHistory = useCallback((policy: APPolicy) => {
+    setHistoryPolicy(policy)
+    setHistoryItems([])
+    setHistoryError(null)
+    void loadHistory(policy)
+  }, [loadHistory])
+
+  const handleHistoryOpenChange = useCallback((open: boolean) => {
+    if (open) return
+
+    historyGeneration.current += 1
+    setHistoryPolicy(null)
+    setHistoryItems([])
+    setHistoryError(null)
+    setHistoryLoading(false)
+  }, [])
+
   useEffect(() => {
     void loadPolicies()
     return () => {
       loadGeneration.current += 1
+      historyGeneration.current += 1
     }
   }, [loadPolicies])
 
@@ -243,7 +299,11 @@ export default function AIPoliciesPage() {
             {data.items.length === 0 || filteredPolicies.length === 0 ? (
               <EmptyPolicyState hasFilters={data.items.length > 0 && hasFilters} />
             ) : (
-              <PolicyList policies={filteredPolicies} onEdit={handlePolicyEdit} />
+              <PolicyList
+                policies={filteredPolicies}
+                onEdit={handlePolicyEdit}
+                onViewHistory={handlePolicyHistory}
+              />
             )}
           </section>
         </>
@@ -257,6 +317,17 @@ export default function AIPoliciesPage() {
         }}
         onSave={handlePolicySave}
         onSaved={() => void handlePolicySaved()}
+      />
+      <PolicyHistoryDialog
+        policy={historyPolicy}
+        open={historyPolicy !== null}
+        items={historyItems}
+        loading={historyLoading}
+        error={historyError}
+        onOpenChange={handleHistoryOpenChange}
+        onRetry={() => {
+          if (historyPolicy) void loadHistory(historyPolicy)
+        }}
       />
     </div>
   )
