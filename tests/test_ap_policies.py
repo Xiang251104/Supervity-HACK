@@ -4,9 +4,55 @@ These lock in the behaviour a judge will test live: change a threshold, re-run t
 same invoice, get a different verdict, and see the evaluation recorded.
 """
 
+from datetime import date
+
 import pytest
 
+from app.services import policies
 from app.services.policies import PolicySnapshot, evaluate
+
+
+@pytest.mark.parametrize(
+    ("value_type", "options", "candidate"),
+    [
+        ("number", None, 30),
+        ("number", None, 0.7),
+        ("enum", ["advisory", "review"], "review"),
+        ("boolean", None, True),
+        ("boolean", None, False),
+        ("date", None, "2026-07-15"),
+    ],
+)
+def test_normalize_policy_value_accepts_persistable_values(
+    value_type, options, candidate
+):
+    assert policies.normalize_policy_value(value_type, options, candidate) == candidate
+
+
+@pytest.mark.parametrize(
+    ("value_type", "options", "candidate", "message"),
+    [
+        ("number", None, True, "number"),
+        ("number", None, "30", "number"),
+        ("number", None, float("nan"), "finite"),
+        ("number", None, float("inf"), "finite"),
+        ("number", None, float("-inf"), "finite"),
+        ("enum", ["advisory", "review"], "Review", "allowed"),
+        ("enum", ["advisory", "review"], "disabled", "allowed"),
+        ("boolean", None, 0, "boolean"),
+        ("boolean", None, 1, "boolean"),
+        ("boolean", None, "true", "boolean"),
+        ("date", None, "2026/07/15", "YYYY-MM-DD"),
+        ("date", None, "2026-02-30", "YYYY-MM-DD"),
+        ("date", None, date(2026, 7, 15), "string"),
+        ("currency", None, "MYR", "Unknown policy value type"),
+    ],
+)
+def test_normalize_policy_value_rejects_invalid_values(
+    value_type, options, candidate, message
+):
+    with pytest.raises(ValueError, match=message):
+        policies.normalize_policy_value(value_type, options, candidate)
 
 
 def snapshot(**overrides):
