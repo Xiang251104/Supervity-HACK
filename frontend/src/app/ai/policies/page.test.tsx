@@ -661,7 +661,7 @@ describe('AP Policies page', () => {
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
   })
 
-  it('refreshes the selected policy history from the server after an edit succeeds', async () => {
+  it('loads authoritative policy history again after an edit and reopen', async () => {
     const duplicatePolicy = snapshot.items[0] as Extract<APPolicy, { value_type: 'number' }>
     const authoritativeSnapshot: APPolicyListResponse = {
       ...snapshot,
@@ -697,12 +697,17 @@ describe('AP Policies page', () => {
     expect(await screen.findByText('Approved seasonal increase')).toBeInTheDocument()
 
     fireEvent.click(
-      screen.getByRole('button', {
-        name: 'Edit Duplicate invoice ceiling',
-        hidden: true,
-      })
+      within(screen.getByRole('dialog')).getAllByRole('button', { name: 'Close' })[0]
     )
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Duplicate invoice ceiling' }))
     fireEvent.click(screen.getByRole('button', { name: 'Save policy' }))
+
+    await waitFor(() => expect(getAPPolicies).toHaveBeenCalledTimes(2))
+    expect(getAPPolicyHistory).toHaveBeenCalledTimes(1)
+    fireEvent.click(
+      screen.getByRole('button', { name: 'View history for Duplicate invoice ceiling' })
+    )
 
     expect(await screen.findByText('Server-confirmed value')).toBeInTheDocument()
     expect(getAPPolicyHistory).toHaveBeenCalledTimes(2)
