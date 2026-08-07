@@ -35,13 +35,15 @@ export function validatePolicyValue(
         ? { valid: true, value }
         : invalidValue('Policy number must be finite')
     }
-    case 'enum':
+    case 'enum': {
+      const options = policy.options
       return typeof rawValue === 'string' &&
-        policy.options?.some(
-          (option) => typeof option === 'string' && option === rawValue
-        )
+        Array.isArray(options) &&
+        options.every((option) => typeof option === 'string') &&
+        options.includes(rawValue)
         ? { valid: true, value: rawValue }
         : invalidValue('Policy value must match an available option')
+    }
     case 'boolean':
       return typeof rawValue === 'boolean'
         ? { valid: true, value: rawValue }

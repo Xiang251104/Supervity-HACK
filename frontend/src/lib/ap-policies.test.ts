@@ -111,6 +111,15 @@ describe('validatePolicyValue', () => {
     })
   })
 
+  it('fails closed when an enum policy includes a non-string option', () => {
+    const policy = { value_type: 'enum' as const, options: ['review', 1] }
+
+    expect(validatePolicyValue(policy, 'review')).toEqual({
+      valid: false,
+      error: 'Policy value must match an available option',
+    })
+  })
+
   it('accepts only booleans for boolean policies', () => {
     expect(
       validatePolicyValue({ value_type: 'boolean', options: null }, false)
