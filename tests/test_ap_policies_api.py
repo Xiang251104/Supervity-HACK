@@ -69,6 +69,25 @@ class PolicyApiHarness:
             )
             return policy.value, policy.version, policy.updated_by, history_count
 
+    def policy_versions(self, key: str) -> list[dict[str, Any]]:
+        with self.session_factory() as db:
+            versions = (
+                db.query(PolicyVersion)
+                .filter(PolicyVersion.policy_key == key)
+                .order_by(PolicyVersion.version.desc())
+                .all()
+            )
+            return [
+                {
+                    "version": row.version,
+                    "value": row.value,
+                    "previous_value": row.previous_value,
+                    "changed_by": row.changed_by,
+                    "note": row.note,
+                }
+                for row in versions
+            ]
+
 
 @pytest.fixture
 def policy_api(tmp_path: Path) -> PolicyApiHarness:
@@ -223,6 +242,8 @@ def test_patch_supports_each_policy_value_type(
         ("NUMBER-STRING", "number", 10, None, "10"),
         ("NUMBER-BOOL", "number", 10, None, True),
         ("ENUM-CASE", "enum", "review", ["review", "advisory"], "Review"),
+        ("ENUM-NUMBER", "enum", "review", [1, True, "review"], 1),
+        ("ENUM-BOOLEAN", "enum", "review", [1, True, "review"], True),
         ("BOOLEAN-STRING", "boolean", False, None, "true"),
         ("BOOLEAN-ONE", "boolean", False, None, 1),
         ("BOOLEAN-ZERO", "boolean", True, None, 0),
@@ -281,6 +302,15 @@ def test_valid_update_increments_version_and_appends_one_history_row(
     assert response.json()["version"] == 4
     assert response.json()["updated_by"] == "reviewer@example.com"
     assert policy_api.policy_state("LIMIT") == (125, 4, "reviewer@example.com", 1)
+    assert policy_api.policy_versions("LIMIT") == [
+        {
+            "version": 4,
+            "value": 125,
+            "previous_value": 100,
+            "changed_by": "reviewer@example.com",
+            "note": "Raised limit",
+        }
+    ]
     history = policy_api.client.get("/api/ap/policies/LIMIT/history").json()
     assert history["policy_key"] == "LIMIT"
     assert history["total"] == 1
@@ -390,6 +420,22 @@ def test_history_is_newest_first_and_known_policy_can_have_empty_history(
     assert [item["previous_value"] for item in history.json()["items"]] == [2, 1]
     assert [item["value"] for item in history.json()["items"]] == [3, 2]
     assert [item["note"] for item in history.json()["items"]] == ["second", "first"]
+    assert policy_api.policy_versions("WITH-HISTORY") == [
+        {
+            "version": 3,
+            "value": 3,
+            "previous_value": 2,
+            "changed_by": "reviewer@example.com",
+            "note": "second",
+        },
+        {
+            "version": 2,
+            "value": 2,
+            "previous_value": 1,
+            "changed_by": "reviewer@example.com",
+            "note": "first",
+        },
+    ]
     assert empty_history.status_code == 200
     assert empty_history.json() == {
         "policy_key": "NO-HISTORY",

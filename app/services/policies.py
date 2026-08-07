@@ -106,7 +106,12 @@ def normalize_policy_value(
         return candidate
 
     if value_type == "enum":
-        if candidate not in (options or []):
+        allowed_options = options if isinstance(options, list) else []
+        if (
+            type(candidate) is not str
+            or not all(type(option) is str for option in allowed_options)
+            or candidate not in allowed_options
+        ):
             raise ValueError(
                 f"{candidate!r} is not an allowed enum value. Allowed: {options or []}"
             )

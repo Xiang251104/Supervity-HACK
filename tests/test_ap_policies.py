@@ -56,6 +56,18 @@ def test_normalize_policy_value_rejects_invalid_values(
         policies.normalize_policy_value(value_type, options, candidate)
 
 
+@pytest.mark.parametrize("candidate", [1, True])
+def test_normalize_policy_value_rejects_non_string_enum_candidates(
+    candidate,
+):
+    with pytest.raises(ValueError, match="allowed"):
+        policies.normalize_policy_value(
+            "enum",
+            [1, True, "review"],
+            candidate,
+        )
+
+
 def snapshot(**overrides):
     values = {
         "PRICE-TOLERANCE": 2,
