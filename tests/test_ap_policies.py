@@ -17,6 +17,7 @@ from app.services.policies import PolicySnapshot, evaluate
     [
         ("number", None, 30),
         ("number", None, 0.7),
+        ("number", None, 10**400),
         ("enum", ["advisory", "review"], "review"),
         ("boolean", None, True),
         ("boolean", None, False),

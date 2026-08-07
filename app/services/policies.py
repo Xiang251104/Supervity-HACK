@@ -101,7 +101,7 @@ def normalize_policy_value(
     if value_type == "number":
         if isinstance(candidate, bool) or not isinstance(candidate, (int, float)):
             raise ValueError("Policy value must be a number, not a boolean or string")
-        if not math.isfinite(candidate):
+        if isinstance(candidate, float) and not math.isfinite(candidate):
             raise ValueError("Policy number must be finite")
         return candidate
 
