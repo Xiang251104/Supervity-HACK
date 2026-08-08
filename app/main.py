@@ -38,7 +38,10 @@ from .middleware import AuditMiddleware
 from .routers import (
     admin_router,
     ap_data_manager_router,
+    ap_insights_router,
+    ap_metrics_router,
     ap_policies_router,
+    ap_runs_router,
     ap_workbench_router,
     audit_router,
     auth_router,
@@ -151,6 +154,9 @@ api_router.include_router(admin_router)
 # Audit logs (admin only)
 api_router.include_router(audit_router)
 
+# AP Orchestrator runs — the seam between the Auto agent and the Command Center
+api_router.include_router(ap_runs_router)
+
 # AP exception queue and human resolution
 api_router.include_router(ap_workbench_router)
 
@@ -159,6 +165,12 @@ api_router.include_router(ap_data_manager_router)
 
 # Editable AP policy registry and version history
 api_router.include_router(ap_policies_router)
+
+# AI Insights computed from processed decisions
+api_router.include_router(ap_insights_router)
+
+# Dashboard metrics
+api_router.include_router(ap_metrics_router)
 
 # Item CRUD operations
 api_router.include_router(items_router)

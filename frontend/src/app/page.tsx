@@ -1,24 +1,29 @@
 'use client'
 
-import { useState, useRef, useEffect } from 'react'
-import { motion, useInView } from 'framer-motion'
-import apiClient from '@/lib/api-client'
-import { Button } from '@/components/ui/button'
+import Link from 'next/link'
+import { useCallback, useEffect, useState } from 'react'
+import { motion } from 'framer-motion'
+
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { CardWatermark } from '@/components/ui/card-watermark'
 import { Icons } from '@/components/ui/icons'
-import { ActivityChart } from '@/components/ActivityChart'
+import {
+  barPercent,
+  formatDuration,
+  formatMoney,
+  getAPMetrics,
+  humaniseCode,
+  primaryCurrencyTotal,
+  verdictLabel,
+} from '@/lib/ap-metrics'
 import { cn } from '@/lib/utils'
+import type { APMetrics } from '@/types/ap-metrics'
 
-// Animation variants
 const containerVariants = {
   hidden: { opacity: 0 },
   visible: {
     opacity: 1,
-    transition: {
-      staggerChildren: 0.1,
-      delayChildren: 0.1,
-    },
+    transition: { staggerChildren: 0.08, delayChildren: 0.1 },
   },
 }
 
@@ -27,86 +32,27 @@ const itemVariants = {
   visible: {
     opacity: 1,
     y: 0,
-    transition: {
-      duration: 0.5,
-      ease: [0.25, 0.46, 0.45, 0.94],
-    },
+    transition: { duration: 0.5, ease: [0.25, 0.46, 0.45, 0.94] },
   },
 }
 
-// Animated number component
-function AnimatedNumber({
-  value,
-  suffix = '',
-  duration = 1000,
-}: {
-  value: number
-  suffix?: string
-  duration?: number
-}) {
-  const [displayValue, setDisplayValue] = useState(0)
-  const ref = useRef<HTMLSpanElement>(null)
-  const isInView = useInView(ref, { once: true, amount: 0.5 })
-  const hasAnimated = useRef(false)
-
-  useEffect(() => {
-    if (!isInView || hasAnimated.current) return
-    hasAnimated.current = true
-
-    const startTime = performance.now()
-
-    const animate = (currentTime: number) => {
-      const elapsed = currentTime - startTime
-      const progress = Math.min(elapsed / duration, 1)
-      const eased = 1 - Math.pow(2, -10 * progress)
-
-      setDisplayValue(Math.round(eased * value))
-
-      if (progress < 1) {
-        requestAnimationFrame(animate)
-      } else {
-        setDisplayValue(value)
-      }
-    }
-
-    requestAnimationFrame(animate)
-  }, [value, duration, isInView])
-
-  const formatValue = (num: number): string => {
-    if (num >= 1000) {
-      return (num / 1000).toFixed(1) + 'K'
-    }
-    return num.toString()
-  }
-
-  return (
-    <span ref={ref}>
-      {formatValue(displayValue)}
-      {suffix}
-    </span>
-  )
+const VERDICT_COLOUR: Record<string, string> = {
+  PAY_READY: 'bg-emerald-500',
+  HUMAN_REVIEW: 'bg-amber-500',
+  PAYMENT_HOLD: 'bg-rose-500',
+  DATA_ERROR: 'bg-slate-500',
 }
 
-// Stats Card Component with Bento styling
 interface StatCardProps {
   title: string
-  value: number
-  suffix?: string
+  value: string
+  caption?: string
   icon: React.ElementType
-  trend?: { value: string; positive: boolean }
   colorClass: string
   delay?: number
 }
 
-function StatCard({
-  title,
-  value,
-  suffix = '',
-  icon: Icon,
-  trend,
-  colorClass,
-  delay = 0,
-}: StatCardProps) {
+function StatCard({ title, value, caption, icon: Icon, colorClass, delay = 0 }: StatCardProps) {
   return (
     <motion.div
       variants={itemVariants}
@@ -116,49 +62,22 @@ function StatCard({
       whileHover={{ y: -4 }}
     >
       <Card className='group relative h-full cursor-default overflow-hidden'>
-        {/* Branded watermark texture */}
         <CardWatermark opacity={3} scale={0.9} />
         <CardContent className='relative z-10 p-5'>
-          <div className='flex items-start justify-between'>
-            <div className='space-y-2'>
-              {/* Micro label */}
+          <div className='flex items-start justify-between gap-3'>
+            <div className='min-w-0 space-y-2'>
               <p className='text-micro uppercase text-brand-muted transition-colors duration-200 group-hover:text-brand-cornflower'>
                 {title}
               </p>
-              {/* Display number */}
-              <p className='font-display text-[2.25rem] font-bold leading-none tracking-tight text-brand-navy'>
-                <AnimatedNumber value={value} suffix={suffix} />
+              <p className='font-display text-[2rem] font-bold leading-none tracking-tight text-brand-navy'>
+                {value}
               </p>
-              {/* Trend */}
-              {trend && (
-                <motion.p
-                  className={cn(
-                    'flex items-center gap-1 text-xs font-medium',
-                    trend.positive ? 'text-emerald-600' : 'text-red-500'
-                  )}
-                  initial={{ opacity: 0, x: -10 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: delay + 0.3 }}
-                >
-                  {trend.positive ? (
-                    <Icons.trendingUp className='h-3 w-3' strokeWidth={2} />
-                  ) : (
-                    <Icons.trendingUp
-                      className='h-3 w-3 rotate-180'
-                      strokeWidth={2}
-                    />
-                  )}
-                  {trend.value}
-                </motion.p>
-              )}
+              {caption ? (
+                <p className='text-xs font-medium text-muted-foreground'>{caption}</p>
+              ) : null}
             </div>
-            {/* Icon */}
             <motion.div
-              className={cn(
-                'rounded-xl p-2.5 text-white',
-                'shadow-lg',
-                colorClass
-              )}
+              className={cn('shrink-0 rounded-xl p-2.5 text-white shadow-lg', colorClass)}
               whileHover={{ scale: 1.15, rotate: 5 }}
               transition={{ type: 'spring', stiffness: 400, damping: 17 }}
             >
@@ -171,10 +90,7 @@ function StatCard({
   )
 }
 
-// Hero Section
-function HeroSection({ userName }: { userName?: string }) {
-  const firstName = userName?.split(' ')[0] || 'there'
-
+function HeroSection({ metrics }: { metrics: APMetrics | null }) {
   return (
     <motion.div
       className='col-span-12 py-2'
@@ -183,118 +99,246 @@ function HeroSection({ userName }: { userName?: string }) {
       transition={{ duration: 0.6, ease: [0.25, 0.46, 0.45, 0.94] }}
     >
       <h1 className='text-display-3 font-bold tracking-tight text-brand-navy lg:text-display-2'>
-        Where Intelligence <br className='hidden sm:block' />
-        <span className='text-gradient'>Meets Human.</span>
+        AP Control Tower
       </h1>
       <p className='mt-4 text-lg font-light text-muted-foreground'>
-        Welcome back, {firstName}. Your AI Command Center is ready.
+        {metrics && metrics.invoices_processed > 0
+          ? `${metrics.invoices_processed} invoices processed across ${metrics.total_runs} agent runs.`
+          : 'No invoices processed yet. Run the Orchestrator to populate this view.'}
       </p>
     </motion.div>
   )
 }
 
-// Diagnostics Card
-function DiagnosticsCard() {
-  const [apiResponse, setApiResponse] = useState<string>('')
-  const [adminResponse, setAdminResponse] = useState<string>('')
-  const [isLoading, setIsLoading] = useState(false)
-
-  const callApi = async (
-    endpoint: string,
-    setter: React.Dispatch<React.SetStateAction<string>>
-  ) => {
-    setIsLoading(true)
-    setter('Loading...')
-    try {
-      const data = await apiClient(endpoint)
-      setter(JSON.stringify(data, null, 2))
-    } catch (error) {
-      setter(
-        `Error: ${error instanceof Error ? error.message : 'Unknown error'}`
-      )
-    } finally {
-      setIsLoading(false)
-    }
-  }
+function VerdictBreakdown({ metrics }: { metrics: APMetrics }) {
+  const entries = Object.entries(metrics.verdict_breakdown).filter(([, count]) => count > 0)
+  const total = entries.reduce((sum, [, count]) => sum + count, 0)
 
   return (
-    <Card className='relative col-span-12 h-full overflow-hidden'>
+    <Card className='relative h-full overflow-hidden'>
       <CardWatermark opacity={3} scale={1.1} />
       <CardHeader className='relative z-10'>
         <CardTitle className='flex items-center gap-2'>
-          <Icons.activity
-            className='h-5 w-5 text-brand-cornflower'
-            strokeWidth={1.5}
-          />
-          System Diagnostics
+          <Icons.layers className='h-5 w-5 text-brand-cornflower' strokeWidth={1.5} />
+          Outcomes
         </CardTitle>
       </CardHeader>
-      <CardContent className='relative z-10 space-y-6'>
-        <div className='space-y-3'>
-          <div className='flex items-center justify-between'>
-            <div>
-              <p className='text-sm font-medium text-foreground'>
-                Standard Authorization
-              </p>
-              <p className='mt-0.5 font-mono text-xs text-muted-foreground'>
-                /api/test
-              </p>
+      <CardContent className='relative z-10'>
+        {total === 0 ? (
+          <p className='text-sm text-muted-foreground'>Nothing decided yet.</p>
+        ) : (
+          <>
+            <div className='flex h-3 w-full overflow-hidden rounded-full bg-muted'>
+              {entries.map(([verdict, count]) => (
+                <div
+                  key={verdict}
+                  className={VERDICT_COLOUR[verdict] ?? 'bg-slate-400'}
+                  style={{ width: `${(count / total) * 100}%` }}
+                  title={`${verdictLabel(verdict)}: ${count}`}
+                />
+              ))}
             </div>
-          </div>
-          <Button
-            onClick={() => callApi('/api/test', setApiResponse)}
-            disabled={isLoading}
-            variant='outline'
-            className='w-full'
-          >
-            {isLoading ? 'Running...' : 'Run Diagnostics'}
-          </Button>
-          {apiResponse && (
-            <div className='rounded-xl border border-border/50 bg-muted/30 p-4'>
-              <pre className='overflow-x-auto font-mono text-xs text-muted-foreground'>
-                <code>{apiResponse}</code>
-              </pre>
-            </div>
-          )}
-        </div>
-
-        <div className='h-px bg-border/50' />
-
-        <div className='space-y-3'>
-          <div className='flex items-center justify-between'>
-            <div>
-              <p className='text-sm font-medium text-foreground'>
-                Admin Verification
-              </p>
-              <p className='mt-0.5 font-mono text-xs text-muted-foreground'>
-                /api/admin/dashboard
-              </p>
-            </div>
-          </div>
-          <Button
-            onClick={() => callApi('/api/admin/dashboard', setAdminResponse)}
-            disabled={isLoading}
-            variant='gradient'
-            className='w-full'
-          >
-            {isLoading ? 'Verifying...' : 'Verify Admin Access'}
-            <Icons.arrowRight className='ml-2 h-4 w-4' />
-          </Button>
-          {adminResponse && (
-            <div className='rounded-xl border border-border/50 bg-muted/30 p-4'>
-              <pre className='overflow-x-auto font-mono text-xs text-muted-foreground'>
-                <code>{adminResponse}</code>
-              </pre>
-            </div>
-          )}
-        </div>
+            <ul className='mt-4 space-y-2'>
+              {entries.map(([verdict, count]) => (
+                <li key={verdict} className='flex items-center justify-between text-sm'>
+                  <span className='flex items-center gap-2 text-muted-foreground'>
+                    <span
+                      className={cn(
+                        'h-2.5 w-2.5 rounded-full',
+                        VERDICT_COLOUR[verdict] ?? 'bg-slate-400'
+                      )}
+                    />
+                    {verdictLabel(verdict)}
+                  </span>
+                  <span className='font-medium text-foreground'>{count}</span>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
       </CardContent>
     </Card>
   )
 }
 
-// Main Dashboard — no auth required, renders directly
+function ExceptionsByType({ metrics }: { metrics: APMetrics }) {
+  const top = metrics.exceptions_by_type.slice(0, 6)
+  const counts = top.map((e) => e.count)
+
+  return (
+    <Card className='relative h-full overflow-hidden'>
+      <CardWatermark opacity={3} scale={1.1} />
+      <CardHeader className='relative z-10'>
+        <CardTitle className='flex items-center gap-2'>
+          <Icons.alertTriangle className='h-5 w-5 text-brand-cornflower' strokeWidth={1.5} />
+          Exceptions by type
+        </CardTitle>
+      </CardHeader>
+      <CardContent className='relative z-10'>
+        {top.length === 0 ? (
+          <p className='text-sm text-muted-foreground'>No exceptions raised.</p>
+        ) : (
+          <ul className='space-y-3'>
+            {top.map((exception) => (
+              <li key={exception.code}>
+                <div className='flex items-center justify-between text-sm'>
+                  <span className='truncate text-muted-foreground' title={exception.code}>
+                    {humaniseCode(exception.code)}
+                  </span>
+                  <span className='ml-3 font-medium text-foreground'>{exception.count}</span>
+                </div>
+                <div className='mt-1 h-1.5 w-full overflow-hidden rounded-full bg-muted'>
+                  <div
+                    className='h-full rounded-full bg-brand-cornflower'
+                    style={{ width: `${barPercent(exception.count, counts)}%` }}
+                  />
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+function ExceptionAging({ metrics }: { metrics: APMetrics }) {
+  const counts = metrics.exception_aging.map((b) => b.count)
+  const total = counts.reduce((sum, c) => sum + c, 0)
+
+  return (
+    <Card className='relative h-full overflow-hidden'>
+      <CardWatermark opacity={3} scale={1.1} />
+      <CardHeader className='relative z-10'>
+        <CardTitle className='flex items-center gap-2'>
+          <Icons.clock className='h-5 w-5 text-brand-cornflower' strokeWidth={1.5} />
+          Waiting on a human
+        </CardTitle>
+      </CardHeader>
+      <CardContent className='relative z-10'>
+        {total === 0 ? (
+          <p className='text-sm text-muted-foreground'>The queue is clear.</p>
+        ) : (
+          <>
+            <ul className='space-y-3'>
+              {metrics.exception_aging.map((bucket) => (
+                <li key={bucket.bucket}>
+                  <div className='flex items-center justify-between text-sm'>
+                    <span className='text-muted-foreground'>{bucket.bucket}</span>
+                    <span className='font-medium text-foreground'>{bucket.count}</span>
+                  </div>
+                  <div className='mt-1 h-1.5 w-full overflow-hidden rounded-full bg-muted'>
+                    <div
+                      className='h-full rounded-full bg-amber-500'
+                      style={{ width: `${barPercent(bucket.count, counts)}%` }}
+                    />
+                  </div>
+                </li>
+              ))}
+            </ul>
+            <Link
+              href='/workbench'
+              className='mt-4 inline-flex items-center gap-1 text-sm font-medium text-brand-cornflower hover:underline'
+            >
+              Open the Workbench
+              <Icons.arrowRight className='h-4 w-4' />
+            </Link>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+function RecentRuns({ metrics }: { metrics: APMetrics }) {
+  return (
+    <Card className='relative col-span-12 overflow-hidden'>
+      <CardWatermark opacity={3} scale={1.1} />
+      <CardHeader className='relative z-10'>
+        <CardTitle className='flex items-center gap-2'>
+          <Icons.activity className='h-5 w-5 text-brand-cornflower' strokeWidth={1.5} />
+          Recent agent runs
+        </CardTitle>
+      </CardHeader>
+      <CardContent className='relative z-10'>
+        {metrics.recent_runs.length === 0 ? (
+          <p className='text-sm text-muted-foreground'>
+            No runs recorded. Start one to see the Orchestrator&apos;s activity here.
+          </p>
+        ) : (
+          <div className='overflow-x-auto'>
+            <table className='w-full min-w-[36rem] text-sm'>
+              <thead>
+                <tr className='border-b border-border/50 text-left text-xs uppercase text-muted-foreground'>
+                  <th className='pb-2 pr-4 font-medium'>Run</th>
+                  <th className='pb-2 pr-4 font-medium'>Invoice</th>
+                  <th className='pb-2 pr-4 font-medium'>Status</th>
+                  <th className='pb-2 pr-4 font-medium'>Duration</th>
+                  <th className='pb-2 font-medium'>Policy version</th>
+                </tr>
+              </thead>
+              <tbody>
+                {metrics.recent_runs.map((run) => (
+                  <tr key={run.run_id} className='border-b border-border/30 last:border-0'>
+                    <td className='py-2 pr-4 font-mono text-xs text-muted-foreground'>
+                      {run.run_id}
+                    </td>
+                    <td className='py-2 pr-4 text-foreground'>{run.invoice_ref ?? '—'}</td>
+                    <td className='py-2 pr-4'>
+                      <span
+                        className={cn(
+                          'rounded-full px-2 py-0.5 text-xs font-medium',
+                          run.status === 'completed'
+                            ? 'bg-emerald-100 text-emerald-700'
+                            : run.status === 'failed'
+                              ? 'bg-rose-100 text-rose-700'
+                              : 'bg-slate-100 text-slate-700'
+                        )}
+                      >
+                        {run.status}
+                      </span>
+                    </td>
+                    <td className='py-2 pr-4 text-muted-foreground'>
+                      {formatDuration(run.duration_ms)}
+                    </td>
+                    <td className='py-2 font-mono text-xs text-muted-foreground'>
+                      {run.policy_version_label ?? '—'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
 export default function HomePage() {
+  const [metrics, setMetrics] = useState<APMetrics | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      setMetrics(await getAPMetrics())
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not load dashboard metrics')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void load()
+  }, [load])
+
+  const protectedTotal = metrics ? primaryCurrencyTotal(metrics.money_protected) : null
+  const reviewTotal = metrics ? primaryCurrencyTotal(metrics.spend_under_review) : null
+
   return (
     <motion.div
       className='space-y-6'
@@ -302,59 +346,75 @@ export default function HomePage() {
       initial='hidden'
       animate='visible'
     >
-      {/* Hero Section */}
-      <HeroSection userName='Developer' />
+      <HeroSection metrics={metrics} />
 
-      {/* Stats Grid - Bento style */}
-      <div className='grid grid-cols-2 gap-4 lg:grid-cols-4'>
-        <StatCard
-          title='Total Users'
-          value={10400}
-          icon={Icons.users}
-          trend={{ value: '+12%', positive: true }}
-          colorClass='bg-brand-navy'
-          delay={0.1}
-        />
-        <StatCard
-          title='Active Sessions'
-          value={524}
-          icon={Icons.activity}
-          trend={{ value: '+8%', positive: true }}
-          colorClass='bg-brand-cornflower'
-          delay={0.2}
-        />
-        <StatCard
-          title='Success Rate'
-          value={98}
-          suffix='%'
-          icon={Icons.checkCircle}
-          trend={{ value: '+2%', positive: true }}
-          colorClass='bg-brand-purple'
-          delay={0.3}
-        />
-        <StatCard
-          title='AI Confidence'
-          value={96}
-          suffix='%'
-          icon={Icons.sparkles}
-          trend={{ value: 'Stable', positive: true }}
-          colorClass='bg-gradient-to-br from-brand-navy to-brand-purple'
-          delay={0.4}
-        />
-      </div>
+      {error ? (
+        <div
+          role='alert'
+          className='rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700'
+        >
+          {error}
+        </div>
+      ) : null}
 
-      {/* Activity Chart - Full Width */}
-      <motion.div variants={itemVariants}>
-        <ActivityChart className='col-span-12' />
-      </motion.div>
+      {loading ? (
+        <p className='text-sm text-muted-foreground'>Loading live figures…</p>
+      ) : metrics ? (
+        <>
+          <div className='grid grid-cols-2 gap-4 lg:grid-cols-4'>
+            <StatCard
+              title='Touchless rate'
+              value={`${metrics.touchless_rate}%`}
+              caption={`${metrics.pay_ready} of ${metrics.invoices_processed} cleared without a human`}
+              icon={Icons.zap}
+              colorClass='bg-brand-navy'
+              delay={0.1}
+            />
+            <StatCard
+              title='Money protected'
+              value={
+                protectedTotal
+                  ? formatMoney(protectedTotal.amount, protectedTotal.currency)
+                  : '—'
+              }
+              caption={
+                protectedTotal && protectedTotal.otherCurrencies > 0
+                  ? `plus ${protectedTotal.otherCurrencies} other ${protectedTotal.otherCurrencies === 1 ? 'currency' : 'currencies'}`
+                  : 'held before payment'
+              }
+              icon={Icons.shield}
+              colorClass='bg-brand-cornflower'
+              delay={0.2}
+            />
+            <StatCard
+              title='Spend under review'
+              value={reviewTotal ? formatMoney(reviewTotal.amount, reviewTotal.currency) : '—'}
+              caption='awaiting a decision, not protected'
+              icon={Icons.clock}
+              colorClass='bg-brand-purple'
+              delay={0.3}
+            />
+            <StatCard
+              title='Open exceptions'
+              value={String(metrics.workbench_open)}
+              caption={`${metrics.workbench_resolved} resolved`}
+              icon={Icons.inbox}
+              colorClass='bg-gradient-to-br from-brand-navy to-brand-purple'
+              delay={0.4}
+            />
+          </div>
 
-      {/* System Diagnostics */}
-      <motion.div
-        className='grid gap-6 lg:grid-cols-12'
-        variants={itemVariants}
-      >
-        <DiagnosticsCard />
-      </motion.div>
+          <motion.div className='grid gap-6 lg:grid-cols-3' variants={itemVariants}>
+            <VerdictBreakdown metrics={metrics} />
+            <ExceptionsByType metrics={metrics} />
+            <ExceptionAging metrics={metrics} />
+          </motion.div>
+
+          <motion.div className='grid gap-6 lg:grid-cols-12' variants={itemVariants}>
+            <RecentRuns metrics={metrics} />
+          </motion.div>
+        </>
+      ) : null}
     </motion.div>
   )
 }

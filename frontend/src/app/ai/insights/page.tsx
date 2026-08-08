@@ -1,449 +1,278 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
-import { motion, AnimatePresence } from 'framer-motion'
-import { cn } from '@/lib/utils'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
-import { CardWatermark } from '@/components/ui/card-watermark'
-import { Icons } from '@/components/ui/icons'
-import { InsightCard, type Insight } from '@/components/ai/insights/InsightCard'
-import { PatternCluster, type Pattern } from '@/components/ai/insights/PatternCluster'
-import { ActionCard, type ActionItem } from '@/components/ai/insights/ActionCard'
+import Link from 'next/link'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
-// ============================================================================
-// Demo Data — Replace with your own API integration
-// ============================================================================
+import {
+  actionHref,
+  dismissAPInsight,
+  evidenceEntries,
+  formatMetric,
+  getAPInsights,
+  refreshAPInsights,
+  sortInsights,
+} from '@/lib/ap-insights'
+import type { APInsight, APInsightListResponse, APInsightSeverity } from '@/types/ap-insights'
 
-const DEMO_INSIGHTS: Insight[] = [
-  {
-    id: 'demo-insight-001',
-    type: 'pattern',
-    severity: 'info',
-    title: 'Peak Usage Pattern Detected',
-    description: 'Most user activity occurs between 9 AM and 11 AM on weekdays. Tuesday shows 23% higher engagement than other days.',
-    data: { peak_hours: '9:00 - 11:00', peak_day: 'Tuesday', avg_daily_sessions: 156, tuesday_increase: '23%' },
-    suggested_action: 'Schedule system maintenance outside peak hours (before 8 AM or after 6 PM)',
-    action_type: 'schedule_maintenance',
-    confidence: 0.92,
-    created_at: new Date(Date.now() - 2 * 3600000).toISOString(),
-    is_demo: true,
+const SEVERITY_STYLE: Record<APInsightSeverity, { chip: string; bar: string; label: string }> = {
+  critical: {
+    chip: 'bg-rose-100 text-rose-700 border-rose-200',
+    bar: 'bg-rose-500',
+    label: 'Critical',
   },
-  {
-    id: 'demo-insight-002',
-    type: 'anomaly',
-    severity: 'warning',
-    title: 'Unusual API Activity Spike',
-    description: 'API requests spiked 340% at 3:15 AM, significantly outside normal usage patterns. Source traced to 3 IP addresses.',
-    data: { spike_time: '03:15 AM', normal_avg_requests: 45, spike_requests: 198, increase_percent: '340%', source_ips: 3 },
-    suggested_action: 'Review API access logs and verify source IP addresses',
-    action_type: 'investigate',
-    confidence: 0.95,
-    created_at: new Date(Date.now() - 6 * 3600000).toISOString(),
-    is_demo: true,
+  warning: {
+    chip: 'bg-amber-100 text-amber-700 border-amber-200',
+    bar: 'bg-amber-500',
+    label: 'Warning',
   },
-  {
-    id: 'demo-insight-003',
-    type: 'recommendation',
-    severity: 'info',
-    title: 'Policy Optimization Opportunity',
-    description: '23 transactions were manually reviewed that match the Auto-Approve Low Value policy criteria. Creating a supporting policy could save ~3.5 hours per week.',
-    data: { manual_reviews: 23, matching_criteria: 'amount < $50, status = pending', potential_savings_hours: 3.5 },
-    suggested_action: 'Create a complementary policy for amounts under $50',
-    action_type: 'create_policy',
-    confidence: 0.88,
-    created_at: new Date(Date.now() - 12 * 3600000).toISOString(),
-    is_demo: true,
-  },
-  {
-    id: 'demo-insight-004',
-    type: 'anomaly',
-    severity: 'warning',
-    title: 'Duplicate Transaction Detected',
-    description: 'Two transactions with identical amounts, timestamps, and vendor details submitted within 2 seconds. Potential duplicate entry.',
-    data: { transaction_1_id: 'TXN-2024-001234', transaction_2_id: 'TXN-2024-001235', amount: 4750.0, vendor: 'TechSupply Inc', time_difference_seconds: 1.8 },
-    suggested_action: 'Review and potentially void duplicate transaction',
-    action_type: 'review_duplicate',
-    confidence: 0.97,
-    created_at: new Date(Date.now() - 30 * 60000).toISOString(),
-    is_demo: true,
-  },
-]
-
-const DEMO_PATTERNS: Pattern[] = [
-  { name: 'Peak Business Hours', frequency: 'daily', confidence: 0.92, sample_size: 2500, description: 'Activity peaks between 9-11 AM and 2-4 PM on weekdays', is_demo: true },
-  { name: 'Weekend Activity Drop', frequency: 'weekly', confidence: 0.96, sample_size: 8400, description: 'Weekend activity drops to 12% of weekday average', is_demo: true },
-  { name: 'Month-End Surge', frequency: 'monthly', confidence: 0.89, sample_size: 15000, description: 'Last 3 days of month show 45% higher transaction volume', is_demo: true },
-  { name: 'Vendor Preference Clustering', frequency: 'ongoing', confidence: 0.78, sample_size: 1200, description: 'Top 5 vendors account for 67% of all transactions', is_demo: true },
-]
-
-const DEMO_ACTIONS: ActionItem[] = [
-  { title: 'Create policy for sub-$50 auto-approval', priority: 'high', estimated_impact: 'Save 3.5 hours/week', action_type: 'create_policy', action_config: { template: 'auto_approve', threshold: 50 }, is_demo: true },
-  { title: 'Investigate 3 AM API spike', priority: 'high', estimated_impact: 'Security improvement', action_type: 'investigate', action_config: { log_type: 'api_access', time_range: '02:00-04:00' }, is_demo: true },
-  { title: 'Review duplicate transaction pair', priority: 'critical', estimated_impact: 'Prevent $4,750 overpayment', action_type: 'review_transaction', action_config: { transaction_ids: ['TXN-2024-001234', 'TXN-2024-001235'] }, is_demo: true },
-]
-
-interface _InsightsResponse {
-  insights: Insight[]
-  patterns: Pattern[]
-  actions: ActionItem[]
-}
-
-// Tab configuration
-interface Tab {
-  id: string
-  label: string
-  icon: React.ElementType
-}
-
-const tabs: Tab[] = [
-  { id: 'summary', label: 'Summary', icon: Icons.activity },
-  { id: 'patterns', label: 'Patterns', icon: Icons.layers },
-  { id: 'actions', label: 'Actions', icon: Icons.zap },
-]
-
-const containerVariants = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: { staggerChildren: 0.1 },
+  info: {
+    chip: 'bg-sky-100 text-sky-700 border-sky-200',
+    bar: 'bg-sky-500',
+    label: 'Info',
   },
 }
 
-const itemVariants = {
-  hidden: { opacity: 0, y: 20 },
-  visible: { opacity: 1, y: 0 },
-}
-
-export default function AIInsightsPage() {
-  const [activeTab, setActiveTab] = useState('summary')
-  const [insights, setInsights] = useState<Insight[]>([])
-  const [patterns, setPatterns] = useState<Pattern[]>([])
-  const [actions, setActions] = useState<ActionItem[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [isAnalyzing, setIsAnalyzing] = useState(false)
-  const router = useRouter()
-
-  const fetchInsights = useCallback(async () => {
-    setIsLoading(true)
-    // Simulate loading — replace with real API call
-    setTimeout(() => {
-      setInsights(DEMO_INSIGHTS)
-      setPatterns(DEMO_PATTERNS)
-      setActions(DEMO_ACTIONS)
-      setIsLoading(false)
-    }, 300)
-  }, [])
-
-  useEffect(() => {
-    fetchInsights()
-  }, [fetchInsights])
-
-  const handleAnalyze = async () => {
-    setIsAnalyzing(true)
-    // Simulate analysis — replace with real API call
-    setTimeout(() => {
-      setInsights(DEMO_INSIGHTS)
-      setPatterns(DEMO_PATTERNS)
-      setActions(DEMO_ACTIONS)
-      setIsAnalyzing(false)
-    }, 1500)
-  }
-
-  const handleInsightAction = useCallback(async (insight: Insight) => {
-    // Route based on action_type
-    switch (insight.action_type) {
-      case 'create_policy':
-        router.push('/ai/policies?tab=create-with-ai')
-        break
-      case 'investigate':
-      case 'review_duplicate':
-        router.push('/workbench')
-        break
-      default:
-        break
-    }
-  }, [router])
-
-  const handleDismissInsight = useCallback(async (id: string) => {
-    // Optimistic UI update
-    setInsights(prev => prev.filter(i => i.id !== id))
-  }, [])
-
-  const handleApplyAction = useCallback(async (action: ActionItem) => {
-    // Route based on action type
-    switch (action.action_type) {
-      case 'create_policy':
-        router.push('/ai/policies?tab=create-with-ai')
-        break
-      case 'investigate':
-      case 'review_transaction':
-        router.push('/workbench')
-        break
-      default:
-        break
-    }
-  }, [router])
-
-  // Stats for summary
-  const criticalCount = insights.filter(i => i.severity === 'critical').length
-  const warningCount = insights.filter(i => i.severity === 'warning').length
-  const infoCount = insights.filter(i => i.severity === 'info').length
-
+function SummaryTile({ label, value }: { label: string; value: number | string }) {
   return (
-    <motion.div
-      className="space-y-6"
-      variants={containerVariants}
-      initial="hidden"
-      animate="visible"
-    >
-      {/* Header */}
-      <motion.div variants={itemVariants} className="flex items-center justify-between">
-        <div>
-          <h1 className="text-display-3 font-bold tracking-tight text-brand-navy lg:text-display-2">
-            AI Insights
-          </h1>
-          <p className="mt-2 text-lg text-muted-foreground">
-            AI-powered analysis of your data. Discover patterns, anomalies, and optimization opportunities.
-          </p>
-        </div>
-        <Button
-          variant="gradient"
-          onClick={handleAnalyze}
-          disabled={isAnalyzing}
-        >
-          {isAnalyzing ? (
-            <>
-              <Icons.loader className="mr-2 h-4 w-4 animate-spin" />
-              Analyzing...
-            </>
-          ) : (
-            <>
-              <Icons.sparkles className="mr-2 h-4 w-4" strokeWidth={1.5} />
-              Run Analysis
-            </>
-          )}
-        </Button>
-      </motion.div>
-
-      {/* Demo Data Notice */}
-      <motion.div 
-        variants={itemVariants}
-        className="rounded-lg border border-amber-200 bg-amber-50 p-4"
-      >
-        <div className="flex items-start gap-3">
-          <Icons.info className="h-5 w-5 text-amber-600 mt-0.5" />
-          <div className="flex-1">
-            <p className="font-medium text-amber-900">Demo Insights</p>
-            <p className="text-sm text-amber-700 mt-1">
-              Items marked with [DEMO] are sample data for demonstration purposes. 
-              Connect your AI backend to enable real-time analysis of your data.
-            </p>
-          </div>
-        </div>
-      </motion.div>
-
-      {/* Stats Cards */}
-      <motion.div variants={itemVariants} className="grid gap-4 sm:grid-cols-3">
-        <Card className="relative overflow-hidden">
-          <CardWatermark opacity={2} scale={0.8} />
-          <CardContent className="relative z-10 flex items-center gap-4 py-6">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-red-100">
-              <Icons.alertCircle className="h-6 w-6 text-red-600" strokeWidth={1.5} />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-brand-navy">{criticalCount}</p>
-              <p className="text-sm text-muted-foreground">Critical Issues</p>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="relative overflow-hidden">
-          <CardWatermark opacity={2} scale={0.8} />
-          <CardContent className="relative z-10 flex items-center gap-4 py-6">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-amber-100">
-              <Icons.alertTriangle className="h-6 w-6 text-amber-600" strokeWidth={1.5} />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-brand-navy">{warningCount}</p>
-              <p className="text-sm text-muted-foreground">Warnings</p>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="relative overflow-hidden">
-          <CardWatermark opacity={2} scale={0.8} />
-          <CardContent className="relative z-10 flex items-center gap-4 py-6">
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-100">
-              <Icons.lightbulb className="h-6 w-6 text-blue-600" strokeWidth={1.5} />
-            </div>
-            <div>
-              <p className="text-2xl font-bold text-brand-navy">{infoCount + patterns.length}</p>
-              <p className="text-sm text-muted-foreground">Recommendations</p>
-            </div>
-          </CardContent>
-        </Card>
-      </motion.div>
-
-      {/* Tab Navigation */}
-      <motion.div variants={itemVariants}>
-        <div className={cn(
-          'inline-flex items-center gap-1 rounded-xl p-1',
-          'bg-white/50 border border-border/50',
-          'backdrop-blur-sm'
-        )}>
-          {tabs.map((tab) => {
-            const isActive = activeTab === tab.id
-            const Icon = tab.icon
-            
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={cn(
-                  'relative flex items-center gap-2 rounded-lg px-4 py-2.5',
-                  'text-sm font-medium transition-all duration-200',
-                  'focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-cornflower/50',
-                  isActive
-                    ? 'text-white'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-white/50'
-                )}
-              >
-                {isActive && (
-                  <motion.div
-                    layoutId="activeInsightTab"
-                    className="absolute inset-0 rounded-lg bg-brand-navy shadow-soft"
-                    transition={{ type: 'spring', stiffness: 400, damping: 30 }}
-                  />
-                )}
-                <span className="relative z-10 flex items-center gap-2">
-                  <Icon className="h-4 w-4" strokeWidth={1.5} />
-                  <span className="hidden sm:inline">{tab.label}</span>
-                </span>
-              </button>
-            )
-          })}
-        </div>
-      </motion.div>
-
-      {/* Tab Content */}
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={activeTab}
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -10 }}
-          transition={{ duration: 0.2 }}
-        >
-          {isLoading ? (
-            <div className="flex items-center justify-center py-12">
-              <Icons.loader className="h-8 w-8 animate-spin text-brand-cornflower" />
-            </div>
-          ) : (
-            <>
-              {activeTab === 'summary' && (
-                <Card className="relative overflow-hidden">
-                  <CardWatermark opacity={2} scale={1} />
-                  <CardHeader className="relative z-10">
-                    <CardTitle>All Insights</CardTitle>
-                    <CardDescription>
-                      {insights.length} insights generated from your data analysis.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="relative z-10 space-y-4">
-                    {insights.length === 0 ? (
-                      <div className="flex flex-col items-center justify-center py-12 text-center">
-                        <div className={cn(
-                          'mb-4 flex h-16 w-16 items-center justify-center rounded-2xl',
-                          'bg-gradient-to-br from-brand-cornflower/20 to-brand-purple/20'
-                        )}>
-                          <Icons.lightbulb className="h-8 w-8 text-brand-cornflower" strokeWidth={1.5} />
-                        </div>
-                        <h3 className="font-display text-lg font-semibold text-brand-navy">
-                          No insights yet
-                        </h3>
-                        <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-                          Run an analysis to discover patterns, anomalies, and recommendations.
-                        </p>
-                        <Button
-                          variant="gradient"
-                          className="mt-6"
-                          onClick={handleAnalyze}
-                          disabled={isAnalyzing}
-                        >
-                          <Icons.sparkles className="mr-2 h-4 w-4" strokeWidth={1.5} />
-                          Generate Insights
-                        </Button>
-                      </div>
-                    ) : (
-                      insights.map((insight) => (
-                        <InsightCard
-                          key={insight.id}
-                          insight={insight}
-                          onAction={handleInsightAction}
-                          onDismiss={handleDismissInsight}
-                        />
-                      ))
-                    )}
-                  </CardContent>
-                </Card>
-              )}
-
-              {activeTab === 'patterns' && (
-                <Card className="relative overflow-hidden">
-                  <CardWatermark opacity={2} scale={1} />
-                  <CardHeader className="relative z-10">
-                    <CardTitle>Detected Patterns</CardTitle>
-                    <CardDescription>
-                      Recurring behaviors and trends identified in your data.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="relative z-10">
-                    <PatternCluster patterns={patterns} />
-                  </CardContent>
-                </Card>
-              )}
-
-              {activeTab === 'actions' && (
-                <Card className="relative overflow-hidden">
-                  <CardWatermark opacity={2} scale={1} />
-                  <CardHeader className="relative z-10">
-                    <CardTitle>Recommended Actions</CardTitle>
-                    <CardDescription>
-                      AI-suggested improvements based on your insights.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="relative z-10 space-y-3">
-                    {actions.length === 0 ? (
-                      <div className="flex flex-col items-center justify-center py-12 text-center">
-                        <div className={cn(
-                          'mb-4 flex h-12 w-12 items-center justify-center rounded-xl',
-                          'bg-muted/50'
-                        )}>
-                          <Icons.zap className="h-6 w-6 text-muted-foreground" strokeWidth={1.5} />
-                        </div>
-                        <p className="text-sm text-muted-foreground">
-                          No actions recommended at this time.
-                        </p>
-                      </div>
-                    ) : (
-                      actions.map((action, idx) => (
-                        <ActionCard
-                          key={idx}
-                          action={action}
-                          onApply={handleApplyAction}
-                        />
-                      ))
-                    )}
-                  </CardContent>
-                </Card>
-              )}
-            </>
-          )}
-        </motion.div>
-      </AnimatePresence>
-    </motion.div>
+    <div className='rounded-xl border border-slate-200 bg-white p-4 shadow-sm'>
+      <p className='text-xs font-medium uppercase tracking-wide text-slate-500'>{label}</p>
+      <p className='mt-1 text-2xl font-semibold text-slate-900'>{value}</p>
+    </div>
   )
 }
 
+function InsightCard({
+  insight,
+  onDismiss,
+  dismissing,
+}: {
+  insight: APInsight
+  onDismiss: (id: number) => void
+  dismissing: boolean
+}) {
+  const [showEvidence, setShowEvidence] = useState(false)
+  const style = SEVERITY_STYLE[insight.severity] ?? SEVERITY_STYLE.info
+  const metric = formatMetric(insight)
+  const href = actionHref(insight)
+  const entries = evidenceEntries(insight.evidence)
+
+  return (
+    <article className='overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm'>
+      <div className={`h-1 w-full ${style.bar}`} />
+      <div className='p-5'>
+        <div className='flex flex-wrap items-start justify-between gap-3'>
+          <div className='min-w-0'>
+            <span
+              className={`inline-flex rounded-full border px-2.5 py-0.5 text-xs font-medium ${style.chip}`}
+            >
+              {style.label}
+            </span>
+            <h3 className='mt-2 text-base font-semibold text-slate-900'>{insight.title}</h3>
+          </div>
+          {metric ? (
+            <p className='shrink-0 text-2xl font-semibold text-slate-900'>{metric}</p>
+          ) : null}
+        </div>
+
+        <p className='mt-3 text-sm leading-relaxed text-slate-600'>{insight.body}</p>
+
+        <div className='mt-4 flex flex-wrap items-center gap-2'>
+          {insight.action_label ? (
+            href ? (
+              <Link
+                href={href}
+                className='rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-medium text-white transition hover:bg-slate-700'
+              >
+                {insight.action_label}
+              </Link>
+            ) : (
+              <span className='rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-600'>
+                {insight.action_label}
+              </span>
+            )
+          ) : null}
+
+          {entries.length > 0 ? (
+            <button
+              type='button'
+              onClick={() => setShowEvidence((open) => !open)}
+              aria-expanded={showEvidence}
+              aria-controls={`insight-evidence-${insight.id}`}
+              className='rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 transition hover:bg-slate-50'
+            >
+              {showEvidence ? 'Hide evidence' : `Show evidence (${entries.length})`}
+            </button>
+          ) : null}
+
+          <button
+            type='button'
+            onClick={() => onDismiss(insight.id)}
+            disabled={dismissing}
+            className='rounded-lg px-3 py-1.5 text-sm text-slate-500 transition hover:text-slate-800 disabled:opacity-50'
+          >
+            {dismissing ? 'Dismissing…' : 'Dismiss'}
+          </button>
+        </div>
+
+        {showEvidence ? (
+          <dl
+            id={`insight-evidence-${insight.id}`}
+            className='mt-4 space-y-3 rounded-lg bg-slate-50 p-4'
+          >
+            {entries.map((entry) => (
+              <div key={entry.label}>
+                <dt className='text-xs font-medium uppercase tracking-wide text-slate-500'>
+                  {entry.label}
+                </dt>
+                <dd className='mt-1 overflow-x-auto'>
+                  <pre className='whitespace-pre-wrap break-words text-xs text-slate-700'>
+                    {entry.value}
+                  </pre>
+                </dd>
+              </div>
+            ))}
+          </dl>
+        ) : null}
+      </div>
+    </article>
+  )
+}
+
+export default function InsightsPage() {
+  const [data, setData] = useState<APInsightListResponse | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
+  const [dismissingId, setDismissingId] = useState<number | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  // The GET is read-only, so the first visit after a run has nothing stored yet. We
+  // compute once, guarded so React Strict Mode's double effect cannot fire two writes.
+  const autoComputed = useRef(false)
+
+  const load = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      let response = await getAPInsights()
+      if (response.items.length === 0 && response.decisions_analysed > 0 && !autoComputed.current) {
+        autoComputed.current = true
+        response = await refreshAPInsights()
+      }
+      setData(response)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not load insights')
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    void load()
+  }, [load])
+
+  const handleRefresh = async () => {
+    setRefreshing(true)
+    setError(null)
+    try {
+      setData(await refreshAPInsights())
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not recompute insights')
+    } finally {
+      setRefreshing(false)
+    }
+  }
+
+  const handleDismiss = async (id: number) => {
+    setDismissingId(id)
+    setError(null)
+    try {
+      await dismissAPInsight(id)
+      setData((current) => {
+        if (!current) return current
+        const removed = current.items.find((i) => i.id === id)
+        if (!removed) return current
+        // Keep the summary tiles in step with the list, or they claim a severity that
+        // has no card under it until the next reload.
+        return {
+          ...current,
+          items: current.items.filter((i) => i.id !== id),
+          total: current.total - 1,
+          critical: current.critical - (removed.severity === 'critical' ? 1 : 0),
+          warning: current.warning - (removed.severity === 'warning' ? 1 : 0),
+          info: current.info - (removed.severity === 'info' ? 1 : 0),
+        }
+      })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not dismiss the insight')
+    } finally {
+      setDismissingId(null)
+    }
+  }
+
+  const items = data ? sortInsights(data.items) : []
+
+  return (
+    <main className='mx-auto w-full max-w-5xl px-4 py-8'>
+      <header className='flex flex-wrap items-start justify-between gap-4'>
+        <div>
+          <h1 className='text-2xl font-semibold text-slate-900'>AI Insights</h1>
+          <p className='mt-1 text-sm text-slate-600'>
+            Patterns and anomalies computed from the invoices the agent has actually processed.
+            {data?.computed_at
+              ? ` Last computed ${new Date(data.computed_at).toLocaleString()}.`
+              : ''}
+          </p>
+        </div>
+        <button
+          type='button'
+          onClick={handleRefresh}
+          disabled={refreshing || loading}
+          className='rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-700 disabled:opacity-50'
+        >
+          {refreshing ? 'Recomputing…' : 'Recompute'}
+        </button>
+      </header>
+
+      {error ? (
+        <div
+          role='alert'
+          className='mt-6 rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700'
+        >
+          {error}
+        </div>
+      ) : null}
+
+      {data ? (
+        <section className='mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4'>
+          <SummaryTile label='Critical' value={data.critical} />
+          <SummaryTile label='Warning' value={data.warning} />
+          <SummaryTile label='Info' value={data.info} />
+          <SummaryTile label='Invoices analysed' value={data.decisions_analysed} />
+        </section>
+      ) : null}
+
+      <section className='mt-6 space-y-4'>
+        {loading ? (
+          <p className='text-sm text-slate-500'>Loading insights…</p>
+        ) : items.length === 0 ? (
+          <div className='rounded-xl border border-dashed border-slate-300 bg-white p-8 text-center'>
+            <h2 className='text-base font-semibold text-slate-900'>No insights yet</h2>
+            <p className='mx-auto mt-2 max-w-md text-sm text-slate-600'>
+              {data && data.decisions_analysed === 0
+                ? 'Insights are computed from invoices the agent has processed. Run the Orchestrator on at least one invoice, then recompute.'
+                : 'Nothing stood out across the processed invoices. Recompute after the next run.'}
+            </p>
+          </div>
+        ) : (
+          items.map((insight) => (
+            <InsightCard
+              key={insight.id}
+              insight={insight}
+              onDismiss={handleDismiss}
+              dismissing={dismissingId === insight.id}
+            />
+          ))
+        )}
+      </section>
+    </main>
+  )
+}
