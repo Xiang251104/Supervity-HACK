@@ -15,6 +15,7 @@ import {
   LoaderCircle,
   MessageSquareText,
   RefreshCw,
+  Search,
   ShieldAlert,
   UserRoundCheck,
   X,
@@ -615,6 +616,7 @@ function DecisionDetail({
 
 export default function WorkbenchPage() {
   const [filters, setFilters] = useState<WorkbenchFilters>(DEFAULT_FILTERS)
+  const [searchQuery, setSearchQuery] = useState('')
   const [items, setItems] = useState<WorkbenchItemSummary[]>([])
   const [total, setTotal] = useState(0)
   const [selectedId, setSelectedId] = useState<number | null>(null)
@@ -683,6 +685,15 @@ export default function WorkbenchPage() {
   }, [selectedId])
 
   const protectedExposure = useMemo(() => summarizeProtectedExposure(items), [items])
+
+  // A client-side filter on top of whatever status/priority already loaded —
+  // the queue is never large enough to need a server round trip just to find
+  // one invoice number, and it means the search is instant.
+  const visibleItems = useMemo(() => {
+    const query = searchQuery.trim()
+    if (!query) return items
+    return items.filter((item) => item.belnr.includes(query))
+  }, [items, searchQuery])
 
   async function handleAction(action: WorkbenchAction) {
     if (!detail) return
@@ -776,6 +787,32 @@ export default function WorkbenchPage() {
 
       <div className='grid gap-6 xl:grid-cols-[380px_minmax(0,1fr)]'>
         <aside className='space-y-4'>
+          <label className='block text-xs font-semibold uppercase tracking-[0.1em] text-slate-600'>
+            Search invoice
+            <div className='relative mt-1.5'>
+              <Search className='pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400' />
+              <input
+                type='text'
+                inputMode='numeric'
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder='Invoice number, e.g. 5110000150'
+                aria-label='Search by invoice number'
+                className='w-full rounded-xl border border-slate-300 bg-white py-2.5 pl-9 pr-9 text-sm font-medium normal-case tracking-normal text-slate-900 outline-none focus:border-brand-cornflower focus:ring-2 focus:ring-brand-cornflower/20'
+              />
+              {searchQuery ? (
+                <button
+                  type='button'
+                  onClick={() => setSearchQuery('')}
+                  aria-label='Clear search'
+                  className='absolute right-2.5 top-1/2 -translate-y-1/2 rounded-full p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600'
+                >
+                  <X className='h-4 w-4' />
+                </button>
+              ) : null}
+            </div>
+          </label>
+
           <div className='grid grid-cols-2 gap-3'>
             <label className='text-xs font-semibold uppercase tracking-[0.1em] text-slate-600'>
               Status
@@ -824,15 +861,23 @@ export default function WorkbenchPage() {
               <p className='font-semibold'>Queue unavailable</p>
               <p className='mt-1'>{queueError}</p>
             </div>
-          ) : items.length === 0 ? (
+          ) : visibleItems.length === 0 ? (
             <div className='rounded-2xl border border-dashed border-slate-300 bg-white/70 p-6 text-center'>
               <Check className='mx-auto h-8 w-8 text-emerald-500' />
-              <p className='mt-3 text-sm font-semibold text-slate-900'>No exceptions match these filters</p>
-              <p className='mt-1 text-xs text-slate-500'>Change the filters or refresh the queue.</p>
+              <p className='mt-3 text-sm font-semibold text-slate-900'>
+                {searchQuery.trim()
+                  ? `No invoice matching "${searchQuery.trim()}"`
+                  : 'No exceptions match these filters'}
+              </p>
+              <p className='mt-1 text-xs text-slate-500'>
+                {searchQuery.trim()
+                  ? 'Check the invoice number, or clear the search.'
+                  : 'Change the filters or refresh the queue.'}
+              </p>
             </div>
           ) : (
             <div className='max-h-[780px] space-y-3 overflow-y-auto pr-1 [content-visibility:auto]'>
-              {items.map((item) => (
+              {visibleItems.map((item) => (
                 <QueueItem
                   key={item.id}
                   item={item}
