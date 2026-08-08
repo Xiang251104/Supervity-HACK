@@ -61,6 +61,37 @@ class TestRedaction:
 
 
 class TestMessage:
+    def test_exception_alert_carries_real_context_and_redacts_account_like_content(self):
+        message = slack.build_exception_alert(
+            run_id="RUN-20260808-AB12CD34",
+            belnr="5110000150",
+            vendor="6406-8941-4832 Vendor",
+            amount="MYR 250.00",
+            verdict="PAYMENT_HOLD",
+            reason_codes=["BANK_MISMATCH", "BEC_SUSPECTED"],
+        )
+
+        assert "RUN-20260808-AB12CD34" in message
+        assert "5110000150" in message
+        assert "****4832 Vendor" in message
+        assert "6406-8941-4832" not in message
+        assert "MYR 250.00" in message
+        assert "PAYMENT_HOLD" in message
+        assert "BANK_MISMATCH, BEC_SUSPECTED" in message
+
+    def test_exception_alert_uses_safe_vendor_fallback(self):
+        message = slack.build_exception_alert(
+            run_id="RUN-20260808-AB12CD34",
+            belnr="5110000150",
+            vendor=None,
+            amount=None,
+            verdict="HUMAN_REVIEW",
+            reason_codes=[],
+        )
+
+        assert "*Vendor:* Not recorded" in message
+        assert "*Amount:* Not recorded" in message
+
     def test_carries_what_the_recipient_needs_to_act(self):
         message = slack.build_information_request(
             belnr="5110000007",
@@ -91,6 +122,20 @@ class TestMessage:
 
 
 class TestSend:
+    def test_transport_failure_does_not_log_exception_text(self, monkeypatch, caplog):
+        secret = "https://hooks.example.test/services/SECRET-DO-NOT-LOG"
+        monkeypatch.setenv("SLACK_WEBHOOK_URL", "https://hooks.example.test/ap-alerts")
+
+        def explode(*args, **kwargs):
+            raise httpx.ConnectError(secret)
+
+        monkeypatch.setattr(slack.httpx, "post", explode)
+
+        result = slack.send("hello")
+
+        assert result.outcome == "failed"
+        assert secret not in caplog.text
+
     def test_reports_not_configured_rather_than_pretending_to_send(self, monkeypatch):
         monkeypatch.delenv("SLACK_WEBHOOK_URL", raising=False)
         result = slack.send("anything")
@@ -132,3 +177,23 @@ class TestSend:
         assert result.sent is False
         assert result.outcome == "failed"
         assert "403" in result.detail
+
+    def test_rejected_response_body_is_not_logged_but_remains_in_result_detail(
+        self, monkeypatch, caplog
+    ):
+        sentinel = "https://hooks.example.test/services/SECRET-RESPONSE-BODY"
+        monkeypatch.setenv("SLACK_WEBHOOK_URL", "https://hooks.example.test/ap-alerts")
+        monkeypatch.setattr(
+            slack.httpx,
+            "post",
+            lambda *a, **k: httpx.Response(403, text=sentinel),
+        )
+
+        result = slack.send("hello")
+
+        assert result == slack.SlackResult(
+            sent=False,
+            outcome="failed",
+            detail=f"Slack returned 403: {sentinel}",
+        )
+        assert sentinel not in caplog.text
