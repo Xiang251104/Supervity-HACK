@@ -24,6 +24,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ..core.database import get_db
@@ -38,6 +39,7 @@ from ..schemas.ap_runs import (
     RunSummary,
 )
 from ..services.policies import build_snapshot, evaluate, record_evaluations
+from ..services import slack
 from ..services.supervity import SupervityClient, SupervityError, SupervityNotConfigured
 
 logger = logging.getLogger(__name__)
@@ -140,6 +142,89 @@ def _combined_reason_codes(
     for result in operator_results.values():
         codes.extend(_as_list(result.get("reason_codes")))
     return list(dict.fromkeys(codes))
+
+
+def _default_trigger_source(canonical: dict[str, Any], trigger_source: str) -> str:
+    """Derive Outlook provenance only when the caller left the API default intact."""
+    if trigger_source.strip().lower() != "api":
+        return trigger_source
+    source_channel = str(canonical.get("source_channel") or "").strip().upper()
+    return "outlook" if source_channel == "EMAIL" else "api"
+
+
+def _alert_amount(canonical: dict[str, Any], amount: float | None) -> str | None:
+    if amount is None:
+        return None
+    currency = str(canonical.get("waers") or "").strip()
+    return f"{currency + ' ' if currency else ''}{amount:,.2f}"
+
+
+def _safe_slack_detail(result: slack.SlackResult) -> str:
+    """Persist a stable delivery description without retaining transport details."""
+    if result.outcome == "success":
+        return "Slack accepted the exception alert."
+    if result.outcome == "not_configured":
+        return "Slack is not configured; no exception alert was sent."
+    return "Slack exception-alert delivery failed."
+
+
+def _record_exception_alert(
+    db: Session,
+    *,
+    run_id: str,
+    belnr: str,
+    canonical: dict[str, Any],
+    amount: float | None,
+    verdict: str,
+    reason_codes: list[str],
+    workbench_item_id: int,
+) -> None:
+    """Send one alert for an opened exception and retain its real outcome."""
+    vendor = canonical.get("vendor_name") or canonical.get("vendor")
+    message = slack.build_exception_alert(
+        run_id=run_id,
+        belnr=belnr,
+        vendor=str(vendor) if vendor else None,
+        amount=_alert_amount(canonical, amount),
+        verdict=verdict,
+        reason_codes=reason_codes,
+    )
+    try:
+        result = slack.send(message)
+    except Exception:  # Notification transport is deliberately best-effort.
+        logger.exception("Slack exception alert failed for run %s", run_id)
+        result = slack.SlackResult(
+            sent=False,
+            outcome="failed",
+            detail="unexpected Slack send failure",
+        )
+
+    next_seq = (
+        db.query(func.coalesce(func.max(RunEvent.seq), 0))
+        .filter(RunEvent.run_id == run_id)
+        .scalar()
+        + 1
+    )
+    db.add(
+        RunEvent(
+            run_id=run_id,
+            seq=next_seq,
+            event_type="integration_activity",
+            operator_name="AP Workbench",
+            summary=(
+                f"Exception alert for invoice {belnr} "
+                f"{'sent to Slack' if result.sent else 'not sent'} ({result.outcome})."
+            ),
+            payload={
+                "integration_key": "slack",
+                "outcome": result.outcome,
+                "detail": _safe_slack_detail(result),
+                "run_id": run_id,
+                "belnr": belnr,
+                "workbench_item_id": workbench_item_id,
+            },
+        )
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -254,6 +339,8 @@ async def start_run(
     if not isinstance(canonical, dict):
         canonical = {}
 
+    run.trigger_source = _default_trigger_source(canonical, body.trigger_source)
+
     belnr = str(canonical.get("belnr") or body.invoice_ref)
     proposed_verdict = str(_find(final_payload, "verdict") or "").upper() or "DATA_ERROR"
     reason_codes = _combined_reason_codes(final_payload, operator_results)
@@ -328,6 +415,17 @@ async def start_run(
             status="open",
         )
         db.add(workbench_item)
+        db.flush()
+        _record_exception_alert(
+            db,
+            run_id=run_id,
+            belnr=belnr,
+            canonical=canonical,
+            amount=amount,
+            verdict=gate.verdict,
+            reason_codes=reason_codes,
+            workbench_item_id=workbench_item.id,
+        )
 
     finished = datetime.now(timezone.utc)
     run.status = "completed"

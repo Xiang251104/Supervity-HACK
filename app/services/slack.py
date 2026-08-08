@@ -100,6 +100,30 @@ def build_information_request(
     return redact_account_numbers("\n".join(lines))
 
 
+def build_exception_alert(
+    *,
+    run_id: str,
+    belnr: str,
+    vendor: str | None,
+    amount: str | None,
+    verdict: str,
+    reason_codes: list[str],
+) -> str:
+    """Build the automatic alert for a newly opened AP exception."""
+    lines = [
+        f"*AP exception opened — run {run_id}*",
+        "",
+        f"*Invoice:* {belnr}",
+        f"*Vendor:* {vendor or 'Not recorded'}",
+        f"*Amount:* {amount or 'Not recorded'}",
+        f"*Verdict:* {verdict}",
+        f"*Reason codes:* {', '.join(reason_codes) or 'Not recorded'}",
+        "",
+        "_Sent from the AP Control Tower after opening a Workbench exception._",
+    ]
+    return redact_account_numbers("\n".join(lines))
+
+
 def send(text: str) -> SlackResult:
     """Post to the configured webhook. Never raises."""
     url = webhook_url()

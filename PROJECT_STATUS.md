@@ -1,6 +1,6 @@
 # Project Status
 
-**Updated:** 2026-08-07
+**Updated:** 2026-08-08
 
 ## Completed Foundation
 
@@ -126,3 +126,6 @@ Task 8 in `docs/superpowers/plans/2026-08-04-ap-data-manager-implementation.md` 
 
 The remaining AP Policies verification prerequisite is the PostgreSQL-backed backend full suite: configure a dedicated `DATABASE_URL` and run `pytest -q`. Afterwards, finish the standalone Bank Change Verification regression, collect the real Outlook, Slack, Supabase, and Supervity evidence above, and complete Workbench Auto-run acceptance and the clean-clone/demo rehearsal.
 
+# 2026-08-08 — Live-evidence work
+
+Implemented: runs now derive Outlook provenance from canonical EMAIL intake evidence when the source remains the API default, and newly opened human-review exceptions write recorded Slack delivery activity. Focused verification: 46 tests passed with a process-only SQLite `DATABASE_URL`; `git diff --check` passed. The normal Data Manager suite remains blocked without an externally configured database URL. No database migration, Data Manager UI/probe, or credentials change is in scope.

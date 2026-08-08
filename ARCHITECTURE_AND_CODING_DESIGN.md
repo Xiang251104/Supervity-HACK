@@ -109,3 +109,8 @@ Detailed behavior is specified in `docs/superpowers/specs/2026-08-04-ap-workbenc
 
 The approved Data Manager design is documented in `docs/superpowers/specs/2026-08-04-ap-data-manager-design.md`.
 
+# 2026-08-08 — Live-evidence design
+
+`app.routers.ap_runs.start_run` derives the persisted default trigger source only after Auto's canonical invoice is available. It treats normalized `EMAIL` as Outlook-originated, but preserves an explicitly non-default source. After policy gating, the router creates a Workbench item first and then performs the Slack notification as a best-effort side effect. It appends a `RunEvent(event_type="integration_activity")` with the next available sequence number and a standardized Slack outcome payload, so integration health is based on real run activity rather than a synthetic probe.
+
+`app.services.slack.build_exception_alert` is the narrowly-scoped formatter for this automatic exception alert. It applies the existing account-number redactor across every composed field. The router catches unexpected notification exceptions and records a safe `failed` outcome, preserving the already-created decision and Workbench item.

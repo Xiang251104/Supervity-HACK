@@ -61,6 +61,37 @@ class TestRedaction:
 
 
 class TestMessage:
+    def test_exception_alert_carries_real_context_and_redacts_account_like_content(self):
+        message = slack.build_exception_alert(
+            run_id="RUN-20260808-AB12CD34",
+            belnr="5110000150",
+            vendor="6406-8941-4832 Vendor",
+            amount="MYR 250.00",
+            verdict="PAYMENT_HOLD",
+            reason_codes=["BANK_MISMATCH", "BEC_SUSPECTED"],
+        )
+
+        assert "RUN-20260808-AB12CD34" in message
+        assert "5110000150" in message
+        assert "****4832 Vendor" in message
+        assert "6406-8941-4832" not in message
+        assert "MYR 250.00" in message
+        assert "PAYMENT_HOLD" in message
+        assert "BANK_MISMATCH, BEC_SUSPECTED" in message
+
+    def test_exception_alert_uses_safe_vendor_fallback(self):
+        message = slack.build_exception_alert(
+            run_id="RUN-20260808-AB12CD34",
+            belnr="5110000150",
+            vendor=None,
+            amount=None,
+            verdict="HUMAN_REVIEW",
+            reason_codes=[],
+        )
+
+        assert "*Vendor:* Not recorded" in message
+        assert "*Amount:* Not recorded" in message
+
     def test_carries_what_the_recipient_needs_to_act(self):
         message = slack.build_information_request(
             belnr="5110000007",
