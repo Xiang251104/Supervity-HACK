@@ -10,13 +10,15 @@ interface Capability {
   query: string
 }
 
+// Each of these maps to something the AI Manager can answer from stored
+// records. Nothing here asks it to act — it is a read-only surface.
 const CAPABILITIES: Capability[] = [
   { icon: Icons.helpCircle, label: 'What can you help me with?', query: 'What can you help me with?' },
   { icon: Icons.activity, label: 'Show recent activity', query: 'Show me recent activity' },
-  { icon: Icons.fileText, label: 'Generate a report', query: 'Generate a report' },
-  { icon: Icons.brain, label: 'Create a policy', query: 'Help me create a new policy' },
-  { icon: Icons.lightbulb, label: 'Show insights', query: 'Show me AI insights' },
-  { icon: Icons.info, label: 'Explain this page', query: 'Explain this page to me' },
+  { icon: Icons.fileText, label: 'How are we performing?', query: 'What is our touchless rate and how much money have we protected?' },
+  { icon: Icons.brain, label: 'Which policies are active?', query: 'Which policies are active?' },
+  { icon: Icons.lightbulb, label: 'Show insights', query: 'What insights do you have?' },
+  { icon: Icons.info, label: "What's waiting for a person?", query: 'What is waiting in the workbench?' },
 ]
 
 interface CapabilityBubblesProps {

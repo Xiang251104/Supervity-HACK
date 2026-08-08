@@ -37,6 +37,7 @@ from .core.storage import GCSStorage, LocalStorage, StorageBackend
 from .middleware import AuditMiddleware
 from .routers import (
     admin_router,
+    ai_manager_router,
     ap_data_manager_router,
     ap_insights_router,
     ap_metrics_router,
@@ -171,6 +172,9 @@ api_router.include_router(ap_insights_router)
 
 # Dashboard metrics
 api_router.include_router(ap_metrics_router)
+
+# AI Manager — grounded question answering over the agent's own records
+api_router.include_router(ai_manager_router)
 
 # Item CRUD operations
 api_router.include_router(items_router)
