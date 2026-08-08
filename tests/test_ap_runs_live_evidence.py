@@ -83,8 +83,12 @@ async def _run(
     monkeypatch.setattr(ap_runs, "build_snapshot", lambda db: _snapshot())
     monkeypatch.setattr(ap_runs, "evaluate", lambda *args: _gate(verdict))
     monkeypatch.setattr(ap_runs, "record_evaluations", lambda *args: None)
-    if slack_result is not None:
-        monkeypatch.setattr(ap_runs.slack, "send", lambda message: slack_result)
+    safe_result = slack_result or SlackResult(
+        sent=False,
+        outcome="not_configured",
+        detail="test Slack transport stub",
+    )
+    monkeypatch.setattr(ap_runs.slack, "send", lambda message: safe_result)
 
     await ap_runs.start_run(
         RunRequest(
@@ -104,6 +108,24 @@ async def test_default_api_source_becomes_outlook_for_whitespace_case_insensitiv
     run_id = await _run(db, monkeypatch, source_channel="  eMaIl  ")
 
     assert db.get(ap_runs.Run, 1).trigger_source == "outlook"
+
+
+@pytest.mark.asyncio
+async def test_default_run_helper_never_reaches_configured_slack_transport(
+    db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    transport_calls: list[object] = []
+    monkeypatch.setenv("SLACK_WEBHOOK_URL", "https://hooks.example.test/ap-alerts")
+
+    def unexpected_transport(*args, **kwargs):
+        transport_calls.append((args, kwargs))
+        raise AssertionError("test helper must stub Slack transport")
+
+    monkeypatch.setattr(ap_runs.slack.httpx, "post", unexpected_transport)
+
+    await _run(db, monkeypatch, source_channel="EMAIL")
+
+    assert transport_calls == []
 
 
 @pytest.mark.asyncio
