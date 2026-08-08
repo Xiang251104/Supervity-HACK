@@ -28,12 +28,16 @@ from __future__ import annotations
 import argparse
 import asyncio
 import sys
+from collections.abc import Sequence
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 
 DEFAULT_BASE_URL = "http://localhost:8001"
+ALLOWED_SCHEMES = ("http", "https")
+LOCAL_HOSTS = ("localhost", "127.0.0.1", "::1")
 
 
 def parse_args() -> argparse.Namespace:
@@ -44,6 +48,8 @@ def parse_args() -> argparse.Namespace:
                         help="Sequential references, e.g. 5110000000:30.")
     parser.add_argument("--file", type=Path, help="File with one reference per line.")
     parser.add_argument("--base-url", default=DEFAULT_BASE_URL)
+    parser.add_argument("--allow-host", action="append", default=[], metavar="HOST",
+                        help="Permit a non-local --base-url host, e.g. a Railway domain.")
     parser.add_argument("--concurrency", type=int, default=3)
     parser.add_argument("--timeout", type=float, default=600.0)
     parser.add_argument("--prefix", default=None,
@@ -51,6 +57,40 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dry-run", action="store_true",
                         help="List what would run, then stop.")
     return parser.parse_args()
+
+
+def validated_base_url(raw: str, extra_hosts: Sequence[str] = ()) -> str:
+    """Rebuild the target from parts we have checked.
+
+    The seeder takes its target off the command line, so the string is only
+    as trustworthy as whoever typed it -- a stray value would have us posting
+    invoice runs at somebody else's host. Callers use what this returns and
+    never the raw argument. Local hosts are fine by default; anything else
+    has to be named with --allow-host, so reaching outside is always a choice.
+    """
+    parts = urlsplit(raw if "://" in raw else f"http://{raw}")
+
+    if parts.scheme not in ALLOWED_SCHEMES:
+        raise SystemExit(f"--base-url must be http or https, not {parts.scheme or 'blank'}")
+
+    try:
+        host, port = parts.hostname, parts.port
+    except ValueError as exc:
+        raise SystemExit(f"--base-url has a bad port: {exc}") from exc
+
+    if not host:
+        raise SystemExit("--base-url needs a host, e.g. http://localhost:8001")
+
+    if parts.username or parts.password:
+        raise SystemExit("--base-url must not carry credentials")
+
+    permitted = {h.lower() for h in LOCAL_HOSTS} | {h.lower() for h in extra_hosts}
+    if host.lower() not in permitted:
+        raise SystemExit(f"{host} is not an allowed target. Add --allow-host {host} if you meant it.")
+
+    literal = f"[{host}]" if ":" in host else host  # IPv6 keeps its brackets
+    netloc = f"{literal}:{port}" if port else literal
+    return urlunsplit((parts.scheme, netloc, parts.path.rstrip("/"), "", ""))
 
 
 def resolve_invoices(args: argparse.Namespace) -> list[str]:
@@ -135,13 +175,14 @@ async def run_one(
 async def main() -> int:
     args = parse_args()
     invoices = resolve_invoices(args)
+    base_url = validated_base_url(args.base_url, args.allow_host)
 
     if not invoices:
         raise SystemExit("No invoices given. Use positional refs, --range or --file.")
 
     prefix = args.prefix or f"DEMO-{datetime.now(timezone.utc):%Y%m%d}"
 
-    print(f"{len(invoices)} invoice(s) -> {args.base_url}")
+    print(f"{len(invoices)} invoice(s) -> {base_url}")
     print(f"run id prefix: {prefix} | concurrency: {args.concurrency}\n")
 
     if args.dry_run:
@@ -154,13 +195,13 @@ async def main() -> int:
 
     async with httpx.AsyncClient(timeout=args.timeout) as client:
         try:
-            await client.get(f"{args.base_url}/api/ap/metrics")
+            await client.get(f"{base_url}/api/ap/metrics")
         except httpx.HTTPError:
-            print(f"Cannot reach {args.base_url}. Is the stack up? (make up)")
+            print(f"Cannot reach {base_url}. Is the stack up? (make up)")
             return 1
 
         await asyncio.gather(*(
-            run_one(client, semaphore, args.base_url, ref, f"{prefix}-{ref}", tally)
+            run_one(client, semaphore, base_url, ref, f"{prefix}-{ref}", tally)
             for ref in invoices
         ))
 
