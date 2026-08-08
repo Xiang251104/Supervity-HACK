@@ -177,3 +177,23 @@ class TestSend:
         assert result.sent is False
         assert result.outcome == "failed"
         assert "403" in result.detail
+
+    def test_rejected_response_body_is_not_logged_but_remains_in_result_detail(
+        self, monkeypatch, caplog
+    ):
+        sentinel = "https://hooks.example.test/services/SECRET-RESPONSE-BODY"
+        monkeypatch.setenv("SLACK_WEBHOOK_URL", "https://hooks.example.test/ap-alerts")
+        monkeypatch.setattr(
+            slack.httpx,
+            "post",
+            lambda *a, **k: httpx.Response(403, text=sentinel),
+        )
+
+        result = slack.send("hello")
+
+        assert result == slack.SlackResult(
+            sent=False,
+            outcome="failed",
+            detail=f"Slack returned 403: {sentinel}",
+        )
+        assert sentinel not in caplog.text
