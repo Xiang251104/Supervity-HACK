@@ -74,6 +74,14 @@ function formatMoney(currency: string | null, amount: number | null): string {
   }).format(amount)}`
 }
 
+/**
+ * Parked: a reviewer asked for something and is waiting. Still open — the
+ * decision has not been made — but distinct from untouched work.
+ */
+function isAwaitingInformation(item: { action?: string | null; status: string }): boolean {
+  return item.action === 'request_info' && item.status !== 'resolved'
+}
+
 function formatDate(value: string): string {
   return new Intl.DateTimeFormat('en-MY', {
     day: '2-digit',
@@ -142,6 +150,12 @@ function QueueItem({
             {item.priority}
           </span>
         </div>
+        {isAwaitingInformation(item) ? (
+          <p className='inline-flex items-center gap-1.5 rounded-full border border-violet-200 bg-violet-50 px-2.5 py-1 text-[11px] font-semibold text-violet-800'>
+            <MessageSquareText className='h-3 w-3' />
+            Waiting on information
+          </p>
+        ) : null}
         <div className='flex flex-wrap items-center justify-between gap-2'>
           <VerdictBadge verdict={item.verdict} />
           <span className='font-mono text-xs font-semibold text-slate-800'>
@@ -323,6 +337,7 @@ function DecisionDetail({
 }) {
   const decision = detail.decision
   const isResolved = detail.status === 'resolved'
+  const awaitingInformation = isAwaitingInformation(detail)
   const checkRows = useMemo(() => buildCheckRows(detail), [detail])
   const confidence = decision?.confidence
 
@@ -423,6 +438,21 @@ function DecisionDetail({
             </div>
           ) : (
             <>
+              {awaitingInformation ? (
+                <div className='mt-4 rounded-xl border border-violet-200 bg-violet-50 p-4'>
+                  <p className='flex items-center gap-2 text-sm font-semibold text-violet-900'>
+                    <MessageSquareText className='h-4 w-4' />
+                    Waiting on information
+                  </p>
+                  <p className='mt-2 text-sm italic leading-6 text-violet-900'>
+                    &ldquo;{detail.note}&rdquo;
+                  </p>
+                  <p className='mt-2 text-xs text-violet-700'>
+                    Asked by {detail.resolved_by || 'a reviewer'}. The invoice stays on hold
+                    until this is answered — approve or reject it once you have what you need.
+                  </p>
+                </div>
+              ) : null}
               <label htmlFor='reviewer-note' className='mt-4 block text-sm font-medium text-slate-800'>
                 Your note <span className='font-normal text-slate-500'>(required)</span>
               </label>
@@ -644,7 +674,17 @@ export default function WorkbenchPage() {
       const updated = await resolveWorkbenchItem(detail.id, action, note)
       setDetail(updated)
       setNote('')
-      setActionSuccess(`${actionLabel(action)}.`)
+      // Never imply the question went out when it did not.
+      const outcome = updated.notification_outcome
+      setActionSuccess(
+        outcome === 'success'
+          ? 'Request sent to the AP channel on Slack.'
+          : outcome === 'not_configured'
+            ? 'Request recorded. No Slack channel is configured, so nobody was notified.'
+            : outcome === 'failed'
+              ? 'Request recorded, but the Slack message could not be delivered.'
+              : `${actionLabel(action)}.`
+      )
       await loadQueue()
     } catch (error) {
       setActionError(error instanceof Error ? error.message : 'Your decision could not be recorded.')
