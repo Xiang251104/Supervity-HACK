@@ -100,6 +100,30 @@ def build_information_request(
     return redact_account_numbers("\n".join(lines))
 
 
+def build_exception_alert(
+    *,
+    run_id: str,
+    belnr: str,
+    vendor: str | None,
+    amount: str | None,
+    verdict: str,
+    reason_codes: list[str],
+) -> str:
+    """Build the automatic alert for a newly opened AP exception."""
+    lines = [
+        f"*AP exception opened — run {run_id}*",
+        "",
+        f"*Invoice:* {belnr}",
+        f"*Vendor:* {vendor or 'Not recorded'}",
+        f"*Amount:* {amount or 'Not recorded'}",
+        f"*Verdict:* {verdict}",
+        f"*Reason codes:* {', '.join(reason_codes) or 'Not recorded'}",
+        "",
+        "_Sent from the AP Control Tower after opening a Workbench exception._",
+    ]
+    return redact_account_numbers("\n".join(lines))
+
+
 def send(text: str) -> SlackResult:
     """Post to the configured webhook. Never raises."""
     url = webhook_url()
@@ -113,11 +137,11 @@ def send(text: str) -> SlackResult:
     try:
         response = httpx.post(url, json={"text": text}, timeout=TIMEOUT_SECONDS)
     except httpx.HTTPError as exc:
-        logger.warning("Slack send failed: %s", exc)
+        logger.warning("Slack send failed; error_category=%s", type(exc).__name__)
         return SlackResult(sent=False, outcome="failed", detail=str(exc)[:300])
 
     if response.status_code >= 400:
-        logger.warning("Slack returned %s: %s", response.status_code, response.text[:200])
+        logger.warning("Slack delivery rejected; http_status=%s", response.status_code)
         return SlackResult(
             sent=False,
             outcome="failed",

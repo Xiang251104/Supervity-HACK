@@ -61,3 +61,8 @@ Build an AP Control Tower in which a Supervity Orchestrator coordinates five spe
 - Secrets and connection credentials remain environment-managed and are never committed.
 - Reviewer actions must commit the human-owned state and append-only audit event atomically.
 
+# 2026-08-08 — Live evidence for Outlook and Slack
+
+- A run that uses the default API trigger source must be recorded as `outlook` when its canonical invoice `source_channel` is `EMAIL`, ignoring case and surrounding whitespace. An explicitly supplied non-default source remains authoritative.
+- Opening an AP Workbench exception must make one best-effort Slack alert and record the actual delivery outcome as a run integration-activity event. A missing or failed Slack configuration must not undo the decision or Workbench item.
+- Slack exception alerts must contain the real run, invoice, vendor (or safe fallback), amount, verdict, and reason codes, while redacting account-like content. Pay-ready runs must not produce an exception Slack event.
