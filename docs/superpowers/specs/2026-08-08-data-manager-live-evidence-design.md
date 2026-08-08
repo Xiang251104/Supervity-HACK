@@ -10,13 +10,13 @@ After canonical invoice output is collected, a run whose trigger source remains 
 
 After policy evaluation, only a decision that opens a Workbench item sends an automatic exception alert. The alert identifies the actual run, invoice, vendor (or safe fallback), amount, verdict, and reason codes. Account-shaped values are redacted before posting.
 
-The Slack operation is best-effort. Successful, failed, and unconfigured sends are all recorded as `integration_activity` run events with `integration_key: slack`, actual outcome, a redacted safe detail, and safe correlation metadata. An unexpected send exception is likewise recorded as `failed`; none of these outcomes can roll back the decision or Workbench item. Pay-ready runs create no automatic Slack event.
+The completed run, decision, and Workbench item are committed before the best-effort Slack operation. Successful, failed, and unconfigured sends are then recorded and committed as `integration_activity` run events with `integration_key: slack`, actual outcome, a redacted safe detail, and safe correlation metadata. An unexpected send exception is likewise recorded as `failed`; none of these outcomes can roll back the already durable decision or Workbench item. Pay-ready runs create no automatic Slack event. Exception logs use fixed safe text and an exception type only, never transport detail or traceback.
 
 ## Data flow and ordering
 
-Auto output -> canonical invoice -> default-source derivation -> policy gate -> decision -> Workbench item -> Slack send -> integration event -> complete run.
+Auto output -> canonical invoice -> default-source derivation -> policy gate -> decision + Workbench item + completed run commit -> Slack send -> integration event commit.
 
-The integration event sequence is `max(existing sequence) + 1`, keeping event ordering unique even if streamed Auto events do not end at a known fixed number.
+The integration event uses the next run-local sequence after existing events, preserving normal event order. No migration is in scope to enforce sequence uniqueness at the database level.
 
 ## Scope boundaries
 

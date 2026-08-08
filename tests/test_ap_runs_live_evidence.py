@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from typing import Callable
 
 import pytest
 from sqlalchemy import create_engine
@@ -33,8 +34,8 @@ class _FakeSupervityClient:
 
 
 @pytest.fixture
-def db() -> Session:
-    engine = create_engine("sqlite://")
+def db(tmp_path) -> Session:
+    engine = create_engine(f"sqlite:///{tmp_path / 'live_evidence.db'}")
     Base.metadata.create_all(engine)
     session = sessionmaker(bind=engine)()
     try:
@@ -66,6 +67,7 @@ async def _run(
     trigger_source: str = "api",
     verdict: str = "PAYMENT_HOLD",
     slack_result: SlackResult | None = None,
+    slack_send: Callable[[str], SlackResult] | None = None,
 ) -> str:
     run_id = "RUN-TEST-LIVE-EVIDENCE"
     _FakeSupervityClient.payload = {
@@ -88,7 +90,7 @@ async def _run(
         outcome="not_configured",
         detail="test Slack transport stub",
     )
-    monkeypatch.setattr(ap_runs.slack, "send", lambda message: safe_result)
+    monkeypatch.setattr(ap_runs.slack, "send", slack_send or (lambda message: safe_result))
 
     await ap_runs.start_run(
         RunRequest(
@@ -126,6 +128,58 @@ async def test_default_run_helper_never_reaches_configured_slack_transport(
     await _run(db, monkeypatch, source_channel="EMAIL")
 
     assert transport_calls == []
+
+
+@pytest.mark.asyncio
+async def test_slack_send_observes_committed_open_workbench_item_before_activity_event(
+    db: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    observed: dict[str, object] = {}
+
+    def verify_durable_workbench(message: str) -> SlackResult:
+        with Session(bind=db.get_bind()) as verification_db:
+            item = verification_db.query(WorkbenchItem).one_or_none()
+            decision = verification_db.query(Decision).one_or_none()
+            run = verification_db.query(ap_runs.Run).one_or_none()
+        observed.update(
+            item_status=item.status if item else None,
+            decision_id=decision.id if decision else None,
+            run_status=run.status if run else None,
+        )
+        return SlackResult(sent=True, outcome="success", detail="delivered")
+
+    run_id = await _run(
+        db,
+        monkeypatch,
+        source_channel="EMAIL",
+        slack_send=verify_durable_workbench,
+    )
+
+    assert observed == {"item_status": "open", "decision_id": 1, "run_status": "completed"}
+    events = db.query(RunEvent).filter(RunEvent.run_id == run_id).order_by(RunEvent.seq).all()
+    assert [event.event_type for event in events] == ["result", "integration_activity"]
+
+
+@pytest.mark.asyncio
+async def test_transport_secret_is_not_logged_or_persisted(
+    db: Session, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    secret = "https://hooks.example.test/services/SECRET-DO-NOT-LOG"
+
+    def fail_with_secret(message: str) -> SlackResult:
+        raise RuntimeError(secret)
+
+    run_id = await _run(
+        db,
+        monkeypatch,
+        source_channel="EMAIL",
+        slack_send=fail_with_secret,
+    )
+
+    event = db.query(RunEvent).filter(RunEvent.run_id == run_id).order_by(RunEvent.seq.desc()).first()
+    assert secret not in caplog.text
+    assert secret not in repr(event.payload)
+    assert event.payload["outcome"] == "failed"
 
 
 @pytest.mark.asyncio

@@ -191,8 +191,11 @@ def _record_exception_alert(
     )
     try:
         result = slack.send(message)
-    except Exception:  # Notification transport is deliberately best-effort.
-        logger.exception("Slack exception alert failed for run %s", run_id)
+    except Exception as exc:  # Notification transport is deliberately best-effort.
+        logger.warning(
+            "Slack exception alert failed; exception_type=%s",
+            type(exc).__name__,
+        )
         result = slack.SlackResult(
             sent=False,
             outcome="failed",
@@ -415,7 +418,15 @@ async def start_run(
             status="open",
         )
         db.add(workbench_item)
-        db.flush()
+
+    finished = datetime.now(timezone.utc)
+    run.status = "completed"
+    run.finished_at = finished
+    run.duration_ms = int((finished - started).total_seconds() * 1000)
+    db.commit()
+
+    if workbench_item is not None:
+        db.refresh(workbench_item)
         _record_exception_alert(
             db,
             run_id=run_id,
@@ -426,15 +437,7 @@ async def start_run(
             reason_codes=reason_codes,
             workbench_item_id=workbench_item.id,
         )
-
-    finished = datetime.now(timezone.utc)
-    run.status = "completed"
-    run.finished_at = finished
-    run.duration_ms = int((finished - started).total_seconds() * 1000)
-    db.commit()
-
-    if workbench_item is not None:
-        db.refresh(workbench_item)
+        db.commit()
 
     logger.info(
         "Run %s invoice %s -> %s (%d policies evaluated, %d fired)",
