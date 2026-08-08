@@ -240,30 +240,58 @@ def evaluate(
         verdict = "PAYMENT_HOLD"
 
     # --- PRICE-TOLERANCE --------------------------------------------------
+    # Enforced upstream: the tolerance travels to the Operators in the snapshot and
+    # decides whether a line matches at all. The gate deliberately cannot relax the
+    # resulting hold -- a threshold must never be able to wave through a control the
+    # match already failed. Widening the tolerance changes the NEXT run's matching,
+    # not this run's verdict.
     tol = snapshot.get("PRICE-TOLERANCE", 2)
     hit = "PO_LINE_NO_MATCH" in codes or "PO_LINE_AMBIGUOUS" in codes
     note("PRICE-TOLERANCE", hit, tol, invoice.get("price_variance_pct"),
          "hold" if "PO_LINE_NO_MATCH" in codes else ("escalate" if hit else "allow"),
-         f"Invoice amount had to match a PO line within {tol}%."
+         f"Invoice amount had to match a PO line within {tol}% (applied during matching)."
          + (" No line matched." if "PO_LINE_NO_MATCH" in codes else
             " More than one line matched." if "PO_LINE_AMBIGUOUS" in codes else " Matched."))
 
     # --- BANK-CHANGE-FREEZE ----------------------------------------------
+    # The freeze window governs one code only: a bank change too recent to trust
+    # without out-of-band verification. Setting the window to 0 is how a business
+    # switches that control off, and it has to visibly do so. A mismatched or
+    # unknown account is not about recency, so it escalates whatever the window is,
+    # and BEC_SUSPECTED is already an absolute hold above.
     freeze = snapshot.get("BANK-CHANGE-FREEZE", 30)
     bank_codes = [c for c in codes if CODE_TO_POLICY.get(c) == "BANK-CHANGE-FREEZE"]
+    freeze_active = float(freeze or 0) > 0
+    freeze_governed = "BANK_CHANGE_UNVERIFIED" in codes
+    always_escalate = any(c in codes for c in ("BANK_MISMATCH", "BANK_ACCOUNT_UNKNOWN"))
+    bank_escalates = always_escalate or (freeze_governed and freeze_active)
+    if bank_escalates:
+        verdict = _stronger(verdict, "HUMAN_REVIEW")
     note("BANK-CHANGE-FREEZE", bool(bank_codes), freeze, bank_codes or None,
-         "hold" if "BEC_SUSPECTED" in codes else ("escalate" if bank_codes else "allow"),
+         "hold" if "BEC_SUSPECTED" in codes else ("escalate" if bank_escalates else "allow"),
          f"Bank changes within {freeze} days require out-of-band verification."
-         + (" Fraud signals correlated." if "BEC_SUSPECTED" in codes else ""))
+         + (" Fraud signals correlated." if "BEC_SUSPECTED" in codes else "")
+         + (" Freeze window disabled, recency alone does not escalate."
+            if freeze_governed and not freeze_active else ""))
 
     # --- GR-POLICY --------------------------------------------------------
+    # fo_aware lets a framework (BSART=FO) order clear without a goods receipt;
+    # strict_require_gr withdraws that exemption. So an invoice Auto exempted must
+    # escalate once the business tightens the setting -- otherwise flipping this
+    # policy changes nothing a judge can see.
     gr = snapshot.get("GR-POLICY", "fo_aware")
     gr_codes = [c for c in codes if CODE_TO_POLICY.get(c) == "GR-POLICY"]
-    blocking_gr = "RECEIPT_MISSING" in codes or "RECEIPT_PARTIAL" in codes
+    gr_missing = "RECEIPT_MISSING" in codes or "RECEIPT_PARTIAL" in codes
+    exemption_withdrawn = "GR_EXEMPT_FRAMEWORK" in codes and gr == "strict_require_gr"
+    blocking_gr = gr_missing or exemption_withdrawn
+    if blocking_gr:
+        verdict = _stronger(verdict, "HUMAN_REVIEW")
     note("GR-POLICY", bool(gr_codes), gr, gr_codes or None,
          "escalate" if blocking_gr else "allow",
          f"Goods-receipt requirement is '{gr}'."
-         + (" Framework order exempted." if "GR_EXEMPT_FRAMEWORK" in codes else ""))
+         + (" Framework exemption withdrawn by strict_require_gr."
+            if exemption_withdrawn else
+            " Framework order exempted." if "GR_EXEMPT_FRAMEWORK" in codes else ""))
 
     # --- RETRO-PO ---------------------------------------------------------
     retro = snapshot.get("RETRO-PO", "advisory")
@@ -275,13 +303,23 @@ def evaluate(
          f"Retroactive/out-of-validity POs are '{retro}'.")
 
     # --- MIN-CONFIDENCE ---------------------------------------------------
+    # When we know the actual confidence, the policy threshold is authoritative --
+    # including when it is relaxed. Inheriting the agent's LOW_CONFIDENCE code
+    # unconditionally would mean lowering the bar never lets anything through, so
+    # the control would look broken to the person who just changed it. With no
+    # number to test we have nothing to apply the threshold to, so the agent's own
+    # judgement stands.
     min_conf = snapshot.get("MIN-CONFIDENCE", 0.70)
     conf = invoice.get("confidence")
-    low = "LOW_CONFIDENCE" in codes or (conf is not None and float(conf) < float(min_conf))
+    if conf is not None:
+        low = float(conf) < float(min_conf)
+    else:
+        low = "LOW_CONFIDENCE" in codes
     if low:
         verdict = _stronger(verdict, "HUMAN_REVIEW")
     note("MIN-CONFIDENCE", low, min_conf, conf, "escalate" if low else "allow",
-         f"Extraction confidence must be at least {min_conf} to auto-clear.")
+         f"Extraction confidence must be at least {min_conf} to auto-clear."
+         + (f" Measured {conf}." if conf is not None else " Not reported by the agent."))
 
     # --- DOA-BAND / auto-pay ---------------------------------------------
     # A clean three-way match IS the authorization: the PO was already approved, so a
