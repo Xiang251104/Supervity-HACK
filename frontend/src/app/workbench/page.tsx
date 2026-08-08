@@ -22,6 +22,10 @@ import {
 
 import { Button } from '@/components/ui/button'
 import {
+  PolicyDecisionsPanel,
+  parsePolicyEvaluations,
+} from '@/components/ap/policies/policy-decisions-panel'
+import {
   OPERATOR_INFO,
   STATUS_LABELS,
   VERDICT_PLAIN,
@@ -339,6 +343,13 @@ function DecisionDetail({
   const isResolved = detail.status === 'resolved'
   const awaitingInformation = isAwaitingInformation(detail)
   const checkRows = useMemo(() => buildCheckRows(detail), [detail])
+  const policyRows = useMemo(
+    () =>
+      parsePolicyEvaluations(
+        (detail.context as Record<string, unknown> | null)?.policies_evaluated
+      ),
+    [detail]
+  )
   const confidence = decision?.confidence
 
   return (
@@ -533,6 +544,18 @@ function DecisionDetail({
             <ChecksList rows={checkRows} />
           </div>
         </section>
+
+        {policyRows.length ? (
+          <section aria-labelledby='policies-applied'>
+            <h3
+              id='policies-applied'
+              className='text-sm font-semibold uppercase tracking-[0.1em] text-slate-900'
+            >
+              Which rules were applied
+            </h3>
+            <PolicyDecisionsPanel evaluations={policyRows} className='mt-4' />
+          </section>
+        ) : null}
 
         <details className='group rounded-2xl border border-slate-200'>
           <summary className='flex cursor-pointer items-center gap-2 rounded-2xl px-5 py-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 [&::-webkit-details-marker]:hidden'>

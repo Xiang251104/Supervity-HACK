@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import WorkbenchPage from './page'
@@ -39,7 +39,30 @@ const summary = {
 const detail = {
   ...summary,
   recommendation: 'Confirm the supplier identity before releasing payment.',
-  context: { invoice_vendor: '4110006', po_vendor: '4110030' },
+  context: {
+    invoice_vendor: '4110006',
+    po_vendor: '4110030',
+    policies_evaluated: [
+      {
+        policy_key: 'PRICE-TOLERANCE',
+        policy_version: 1,
+        threshold_value: 2,
+        observed_value: null,
+        fired: false,
+        outcome: 'allow',
+        explanation: 'Invoice amount had to match a PO line within 2%. Matched.',
+      },
+      {
+        policy_key: 'MIN-CONFIDENCE',
+        policy_version: 3,
+        threshold_value: 0.7,
+        observed_value: 0.62,
+        fired: true,
+        outcome: 'escalate',
+        explanation: 'Extraction confidence must be at least 0.7 to auto-clear.',
+      },
+    ],
+  },
   assigned_email: null,
   resolved_at: null,
   resolved_by: null,
@@ -95,6 +118,22 @@ describe('AP Workbench page', () => {
     expect(screen.queryByText('PO_VENDOR_MISMATCH')).not.toBeInTheDocument()
     // Full evidence survives inside the collapsed audit record.
     expect(screen.getAllByText('4110030').length).toBeGreaterThan(0)
+  })
+
+  it('shows which rules were applied, including the ones that did nothing', async () => {
+    // The gate's record used to reach the API and stop there; the reviewer saw only
+    // a version label. Losing this section again would make the audit trail
+    // invisible without failing anything else.
+    render(<WorkbenchPage />)
+
+    expect(await screen.findByText('Which rules were applied')).toBeInTheDocument()
+    const section = screen.getByRole('region', { name: 'Which rules were applied' })
+    expect(within(section).getByText(/2 rules were applied/)).toBeInTheDocument()
+    expect(within(section).getByText('Minimum reading confidence')).toBeInTheDocument()
+    expect(within(section).getByText('Price tolerance')).toBeInTheDocument()
+    // Scoped to the section on purpose: the collapsed "Full audit record" below is a
+    // deliberate raw dump for auditors and does still carry the database key.
+    expect(within(section).queryByText('MIN-CONFIDENCE')).not.toBeInTheDocument()
   })
 
   it('requires a note and submits the selected human action', async () => {
