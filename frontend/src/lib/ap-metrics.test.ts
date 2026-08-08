@@ -66,9 +66,14 @@ describe('formatDuration', () => {
 })
 
 describe('humaniseCode', () => {
-  it('turns a reason code into a sentence', () => {
-    expect(humaniseCode('PO_LINE_NO_MATCH')).toBe('Po line no match')
-    expect(humaniseCode('BEC_SUSPECTED')).toBe('Bec suspected')
+  it('uses the reviewer-language label for known codes', () => {
+    expect(humaniseCode('PO_LINE_NO_MATCH')).toBe("Amount doesn't match any PO line")
+    expect(humaniseCode('BEC_SUSPECTED')).toBe('Possible payment-redirect fraud')
+  })
+
+  it('keeps acronyms intact on codes without a dictionary entry', () => {
+    expect(humaniseCode('PO_SOMETHING_NEW')).toBe('PO something new')
+    expect(humaniseCode('SOMETHING_NEW')).toBe('Something new')
   })
 })
 

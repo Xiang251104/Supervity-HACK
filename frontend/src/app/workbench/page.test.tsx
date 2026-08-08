@@ -81,13 +81,18 @@ describe('AP Workbench page', () => {
     })
   })
 
-  it('shows the live exception and its linked decision evidence', async () => {
+  it('shows the exception in plain language with the raw code kept for audit', async () => {
     render(<WorkbenchPage />)
 
     expect(await screen.findByText('AP exception workbench')).toBeInTheDocument()
-    expect((await screen.findAllByText('Vendor mismatch requires review')).length).toBeGreaterThan(0)
+    // The reviewer sees words, not codes — in the queue card and the reason card.
+    expect(
+      (await screen.findAllByText('Purchase order belongs to a different vendor')).length
+    ).toBeGreaterThan(0)
     expect((await screen.findAllByText('MYR 805,966.59')).length).toBeGreaterThan(0)
+    // The raw code stays visible in small print for the audit trail.
     expect(await screen.findByText('PO_VENDOR_MISMATCH')).toBeInTheDocument()
+    // Full evidence survives inside the collapsed audit record.
     expect(screen.getAllByText('4110030').length).toBeGreaterThan(0)
   })
 
@@ -96,9 +101,9 @@ describe('AP Workbench page', () => {
     const approveButton = await screen.findByRole('button', { name: 'Approve payment' })
 
     fireEvent.click(approveButton)
-    expect(screen.getByText('Add a reviewer note before recording an action.')).toBeInTheDocument()
+    expect(screen.getByText('Add a note before recording your decision.')).toBeInTheDocument()
 
-    fireEvent.change(screen.getByLabelText('Reviewer note'), {
+    fireEvent.change(screen.getByLabelText(/your note/i), {
       target: { value: 'Verified with procurement.' },
     })
     fireEvent.click(approveButton)
