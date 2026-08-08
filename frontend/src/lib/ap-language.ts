@@ -358,6 +358,10 @@ export const POLICY_OUTCOME_LABELS: Record<string, string> = {
   hold: 'Held the payment',
   escalate: 'Sent it to a person',
   advise: 'Noted for the record',
+  // Settings the agent applies during its own checks rather than the gate
+  // applying afterwards. Distinct from "allow" on purpose: the gate never
+  // examined these, so claiming it cleared them would overstate the record.
+  delegated: 'Used by the checks themselves',
 }
 
 export const policyOutcomeLabel = (outcome: string): string =>

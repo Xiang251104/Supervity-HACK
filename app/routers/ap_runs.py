@@ -265,6 +265,9 @@ async def start_run(
         "amount_myr": _as_float(entity.get("amount_myr")),
         "confidence": _as_float(canonical.get("confidence")),
         "is_po": bool(canonical.get("is_po")),
+        # Absent on most invoices; the cost-centre policy records that fact rather
+        # than pretending the invoice named one.
+        "kostl": canonical.get("kostl"),
     }
 
     # 5. Gate BEFORE any outward action, and log every evaluation.

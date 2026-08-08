@@ -146,18 +146,62 @@ class TestHoldsAreAbsolute:
         assert verdict_for([code], **relaxed) == "PAYMENT_HOLD"
 
 
+GATE_POLICIES = {"PRICE-TOLERANCE", "BANK-CHANGE-FREEZE", "GR-POLICY",
+                 "RETRO-PO", "MIN-CONFIDENCE", "DOA-BAND"}
+
+# Applied by the Operators from the snapshot rather than decided by the gate. They
+# still have to appear in the record: a policy a business can edit and then find no
+# trace of is indistinguishable from one that was ignored.
+DELEGATED_POLICIES = {"AS-OF-DATE", "HIGH-VALUE-THRESHOLD",
+                      "NEAR-DUP-TOLERANCE", "DEFAULT-KOSTL"}
+
+
 class TestEveryEvaluationIsLogged:
     def test_all_six_gate_policies_are_recorded_even_when_silent(self):
         result = evaluate(snap(), "PAY_READY", [], dict(PO_INVOICE))
         keys = {e["policy_key"] for e in result.evaluated}
-        assert keys == {"PRICE-TOLERANCE", "BANK-CHANGE-FREEZE", "GR-POLICY",
-                        "RETRO-PO", "MIN-CONFIDENCE", "DOA-BAND"}
+        assert GATE_POLICIES <= keys
+
+    def test_every_editable_policy_appears_in_the_record(self):
+        result = evaluate(snap(), "PAY_READY", [], dict(PO_INVOICE))
+        keys = {e["policy_key"] for e in result.evaluated}
+        assert keys == GATE_POLICIES | DELEGATED_POLICIES
 
     def test_a_clean_invoice_logs_evaluations_with_nothing_fired(self):
         result = evaluate(snap(), "PAY_READY", [], dict(PO_INVOICE))
         assert result.verdict == "PAY_READY"
         assert result.fired == []
-        assert len(result.evaluated) == 6
+        assert len(result.evaluated) == 10
+
+    @pytest.mark.parametrize("key", sorted(DELEGATED_POLICIES))
+    def test_a_delegated_policy_is_recorded_without_claiming_the_gate_judged_it(self, key):
+        # "delegated", not "allow": the gate never examined these, so reporting them
+        # as cleared would overstate what the audit trail actually knows.
+        row = row_for(key, [])
+        assert row["outcome"] == "delegated"
+        assert row["fired"] is False
+        assert row["threshold_value"] is not None
+        assert row["explanation"]
+
+    @pytest.mark.parametrize("codes,expected", [
+        (["BEC_SUSPECTED"], "PAYMENT_HOLD"),
+        (["RECEIPT_MISSING"], "HUMAN_REVIEW"),
+        ([], "PAY_READY"),
+    ])
+    def test_delegated_policies_never_move_a_verdict(self, codes, expected):
+        # They are logged, not applied. If logging them could change an outcome the
+        # gate would be deciding twice on the same facts.
+        assert verdict_for(codes) == expected
+
+    def test_the_high_value_row_reports_the_amount_it_compared(self):
+        row = row_for("HIGH-VALUE-THRESHOLD", [], invoice={"amount": 750000, "is_po": True})
+        assert row["threshold_value"] == 500000
+        assert row["observed_value"] == 750000
+        assert "above" in row["explanation"]
+
+    def test_the_cost_centre_row_says_so_when_the_invoice_named_none(self):
+        row = row_for("DEFAULT-KOSTL", [])
+        assert "did not name one" in row["explanation"]
 
     def test_the_threshold_in_force_is_captured_for_the_audit_trail(self):
         row = row_for("MIN-CONFIDENCE", [], **{"MIN-CONFIDENCE": 0.85})
