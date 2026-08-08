@@ -14,6 +14,10 @@ dist/
 .env
 .env.local
 .env.*.local
+# Any other .env variant — backups, per-machine copies, "just for a second" files.
+# A .env.bak sitting untracked is one `git add -A` away from publishing every key.
+.env.*
+!.env.example
 # Claude Code per-developer overrides — never commit
 .claude/settings.local.json
 downloads/
