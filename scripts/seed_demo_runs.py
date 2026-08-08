@@ -28,16 +28,27 @@ from __future__ import annotations
 import argparse
 import asyncio
 import sys
-from collections.abc import Sequence
 from datetime import datetime, timezone
 from pathlib import Path
-from urllib.parse import urlsplit, urlunsplit
 
 import httpx
 
-DEFAULT_BASE_URL = "http://localhost:8001"
-ALLOWED_SCHEMES = ("http", "https")
-LOCAL_HOSTS = ("localhost", "127.0.0.1", "::1")
+# The only places this script may post to.
+#
+# It was previously an arbitrary --base-url, validated at runtime against a host
+# allowlist that --allow-host could extend. That validation was sound but it left
+# the target a command-line string, and a script whose whole job is to POST the
+# invoice book somewhere should not be one typo away from posting it at a host
+# somebody else controls. Naming the targets removes the question: the URL used
+# below originates here, in this file, and never from an argument.
+#
+# Seeding a remote deployment is deliberately not supported. Seed locally, or
+# load the target database directly.
+TARGETS: dict[str, str] = {
+    "local": "http://localhost:8001",   # stack reached from the host machine
+    "docker": "http://backend:8000",    # stack reached from inside the compose network
+}
+DEFAULT_TARGET = "local"
 
 
 def parse_args() -> argparse.Namespace:
@@ -47,9 +58,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--range", dest="ref_range", metavar="START:COUNT",
                         help="Sequential references, e.g. 5110000000:30.")
     parser.add_argument("--file", type=Path, help="File with one reference per line.")
-    parser.add_argument("--base-url", default=DEFAULT_BASE_URL)
-    parser.add_argument("--allow-host", action="append", default=[], metavar="HOST",
-                        help="Permit a non-local --base-url host, e.g. a Railway domain.")
+    parser.add_argument("--target", choices=sorted(TARGETS), default=DEFAULT_TARGET,
+                        help="Which stack to seed. 'local' from your machine, "
+                             "'docker' from inside the compose network.")
     parser.add_argument("--concurrency", type=int, default=3)
     parser.add_argument("--timeout", type=float, default=600.0)
     parser.add_argument("--prefix", default=None,
@@ -57,40 +68,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dry-run", action="store_true",
                         help="List what would run, then stop.")
     return parser.parse_args()
-
-
-def validated_base_url(raw: str, extra_hosts: Sequence[str] = ()) -> str:
-    """Rebuild the target from parts we have checked.
-
-    The seeder takes its target off the command line, so the string is only
-    as trustworthy as whoever typed it -- a stray value would have us posting
-    invoice runs at somebody else's host. Callers use what this returns and
-    never the raw argument. Local hosts are fine by default; anything else
-    has to be named with --allow-host, so reaching outside is always a choice.
-    """
-    parts = urlsplit(raw)
-
-    if parts.scheme not in ALLOWED_SCHEMES:
-        raise SystemExit(f"--base-url needs an http:// or https:// prefix, got {raw!r}")
-
-    try:
-        host, port = parts.hostname, parts.port
-    except ValueError as exc:
-        raise SystemExit(f"--base-url has a bad port: {exc}") from exc
-
-    if not host:
-        raise SystemExit("--base-url needs a host, e.g. http://localhost:8001")
-
-    if parts.username or parts.password:
-        raise SystemExit("--base-url must not carry credentials")
-
-    permitted = {h.lower() for h in LOCAL_HOSTS} | {h.lower() for h in extra_hosts}
-    if host.lower() not in permitted:
-        raise SystemExit(f"{host} is not an allowed target. Add --allow-host {host} if you meant it.")
-
-    literal = f"[{host}]" if ":" in host else host  # IPv6 keeps its brackets
-    netloc = f"{literal}:{port}" if port else literal
-    return urlunsplit((parts.scheme, netloc, parts.path.rstrip("/"), "", ""))
 
 
 def resolve_invoices(args: argparse.Namespace) -> list[str]:
@@ -175,7 +152,7 @@ async def run_one(
 async def main() -> int:
     args = parse_args()
     invoices = resolve_invoices(args)
-    base_url = validated_base_url(args.base_url, args.allow_host)
+    base_url = TARGETS[args.target]
 
     if not invoices:
         raise SystemExit("No invoices given. Use positional refs, --range or --file.")

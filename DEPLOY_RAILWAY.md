@@ -151,15 +151,20 @@ every number stays zero. Always open the console once.
 
 ## Step 6 — Populate it with real runs
 
-Seed the hosted database from your laptop. Runs execute locally against Auto and
-write straight to the hosted Postgres, so no gateway sits in the path:
+Seed against your local stack, pointed at the hosted database. Runs execute
+locally against Auto and write straight to the hosted Postgres, so no gateway
+sits in the path — set `DATABASE_URL` to the hosted connection string, then:
 
 ```powershell
 cd C:\Users\kianx\Projects\ap-command-center
 .\.venv\Scripts\python.exe scripts\seed_demo_runs.py `
-  --range 5110000000:36 5110000150 5110000158 5110000159 5110000164 `
-  --base-url https://<your-backend-url>
+  --range 5110000000:36 5110000150 5110000158 5110000159 5110000164
 ```
+
+The seeder posts only to the local stack — `--target local` (the default) or
+`--target docker` from inside the compose network. It cannot be aimed at a
+deployed host on purpose: a script whose job is to POST the entire invoice book
+should not be one typo away from sending it somewhere else.
 
 About 25 minutes for 40 invoices, unattended. Re-runnable: an already-used run id
 returns 409 and is reported as skipped.

@@ -100,6 +100,9 @@ def test_list_workbench_items_supports_status_and_priority_filters(
             "exception_type": "PO_VENDOR_MISMATCH",
             "priority": "critical",
             "status": "open",
+            # An open item that already carries an action is parked awaiting an
+            # answer rather than untouched, so the queue reports the two apart.
+            "action": None,
             "assigned_role": "AP Manager",
             "created_at": matching[0]["created_at"],
             "verdict": "PAYMENT_HOLD",
@@ -109,8 +112,13 @@ def test_list_workbench_items_supports_status_and_priority_filters(
         }
     ]
 
-    assert client.get("/api/ap/workbench?status=resolved&priority=critical").json()["items"] == []
-    assert client.get("/api/ap/workbench?status=open&priority=normal").json()["items"] == []
+    # Scoped to this test's own item rather than asserting the whole queue is empty.
+    # These filters run against the live database, where real reviewers resolve real
+    # exceptions — an empty-list assertion only holds on a system nobody has used.
+    item_id = workbench_record["item_id"]
+    for query in ("status=resolved&priority=critical", "status=open&priority=normal"):
+        others = client.get(f"/api/ap/workbench?{query}").json()["items"]
+        assert not [item for item in others if item["id"] == item_id]
 
 
 def test_get_workbench_detail_includes_full_immutable_decision(

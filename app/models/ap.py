@@ -192,7 +192,8 @@ class PolicyEvaluation(Base):
     observed_value = Column(JSON, nullable=True)
 
     fired = Column(Boolean, nullable=False, default=False, index=True)
-    outcome = Column(String(30), nullable=True)  # allow|hold|escalate|advise
+    # delegated = applied by an Operator from the snapshot, not decided by the gate
+    outcome = Column(String(30), nullable=True)  # allow|hold|escalate|advise|delegated
     explanation = Column(Text, nullable=True)
     evaluated_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
 

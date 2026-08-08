@@ -284,3 +284,85 @@ export const VALUE_TYPE_LABELS: Record<string, string> = {
 }
 
 export const valueTypeLabel = (type: string): string => VALUE_TYPE_LABELS[type] ?? type
+
+/**
+ * Policy names as a reviewer reads them, plus the question each one answers.
+ *
+ * `name` is capitalised here and lower-case in app/services/language.py because
+ * the backend drops its version mid-sentence ("the goods-receipt requirement rule
+ * affected 1 of 1 invoices") while the UI uses it as a heading. Same words either
+ * way, so a judge who reads an insight and then opens the Workbench meets one
+ * vocabulary rather than two.
+ */
+export interface PolicyInfo {
+  name: string
+  asks: string
+}
+
+export const POLICY_INFO: Record<string, PolicyInfo> = {
+  'PRICE-TOLERANCE': {
+    name: 'Price tolerance',
+    asks: 'How far the invoice may differ from the purchase order',
+  },
+  'BANK-CHANGE-FREEZE': {
+    name: 'Bank-change freeze',
+    asks: 'How long to hold payment after a vendor changes bank details',
+  },
+  'DOA-BAND': {
+    name: 'Auto-pay limit',
+    asks: 'How much may be paid without an approver when there is no purchase order',
+  },
+  'GR-POLICY': {
+    name: 'Goods-receipt requirement',
+    asks: 'Whether goods must be recorded as received before paying',
+  },
+  'RETRO-PO': {
+    name: 'Retroactive-PO handling',
+    asks: 'What to do when the purchase order was raised after the invoice',
+  },
+  'MIN-CONFIDENCE': {
+    name: 'Minimum reading confidence',
+    asks: 'How sure the system must be that it read the invoice correctly',
+  },
+  'AS-OF-DATE': {
+    name: 'Operational as-of date',
+    asks: 'The date ageing and currency calculations are measured against',
+  },
+  'HIGH-VALUE-THRESHOLD': {
+    name: 'High-value threshold',
+    asks: 'The amount above which an invoice counts as high value',
+  },
+  'NEAR-DUP-TOLERANCE': {
+    name: 'Near-duplicate tolerance',
+    asks: 'How close two amounts must be to count as the same bill',
+  },
+  'DEFAULT-KOSTL': {
+    name: 'Default cost centre',
+    asks: 'Which cost centre to use when the invoice does not name one',
+  },
+}
+
+export function policyInfo(key: string): PolicyInfo {
+  return POLICY_INFO[key] ?? { name: humanizeCode(key.replace(/-/g, '_')), asks: '' }
+}
+
+export const policyName = (key: string): string => policyInfo(key).name
+
+/**
+ * What a policy did to this invoice. "allow" is deliberately not "Passed": the
+ * rule was applied and found nothing to act on, which is a different statement
+ * from a check passing.
+ */
+export const POLICY_OUTCOME_LABELS: Record<string, string> = {
+  allow: 'No action needed',
+  hold: 'Held the payment',
+  escalate: 'Sent it to a person',
+  advise: 'Noted for the record',
+  // Settings the agent applies during its own checks rather than the gate
+  // applying afterwards. Distinct from "allow" on purpose: the gate never
+  // examined these, so claiming it cleared them would overstate the record.
+  delegated: 'Used by the checks themselves',
+}
+
+export const policyOutcomeLabel = (outcome: string): string =>
+  POLICY_OUTCOME_LABELS[outcome] ?? humanizeCode(outcome)

@@ -339,6 +339,45 @@ def evaluate(
          f"delegated approver."
          + ("" if unmatched else " Invoice is covered by an approved PO."))
 
+    # --- Policies the Operators apply, not the gate -----------------------
+    # These four travel to Auto inside the snapshot (as_operator_inputs) and are
+    # applied by the Operators themselves: the near-duplicate tolerance during
+    # duplicate screening, the high-value threshold as one of the fraud signals in
+    # bank verification, the as-of date across every ageing and FX figure, the
+    # default cost centre when picking an approval band.
+    #
+    # The gate does not re-decide any of them, but it must still record them. A
+    # policy a business can edit and then find no trace of is indistinguishable
+    # from one that was ignored -- which is exactly the complaint that made
+    # GR-POLICY look dead for 55 runs. They are logged with fired=False and an
+    # outcome of "delegated" rather than "allow", so the record never implies the
+    # gate checked them and found nothing.
+    as_of = snapshot.get("AS-OF-DATE", "2026-07-15")
+    note("AS-OF-DATE", False, as_of, None, "delegated",
+         f"Ageing, discount and currency figures were all measured against {as_of}.")
+
+    high_value = float(snapshot.get("HIGH-VALUE-THRESHOLD", 500000))
+    comparable = invoice.get("amount_myr") or invoice.get("amount")
+    note("HIGH-VALUE-THRESHOLD", False, high_value, comparable, "delegated",
+         f"Invoices above MYR {high_value:,.0f} count as high value, which is one of "
+         f"the signals the bank check weighs before trusting a change of account."
+         + ("" if comparable is None else
+            " This invoice is above that." if abs(float(comparable)) > high_value else
+            " This invoice is below that."))
+
+    near_dup = snapshot.get("NEAR-DUP-TOLERANCE", 0.1)
+    note("NEAR-DUP-TOLERANCE", False, near_dup, None, "delegated",
+         f"Two invoices whose amounts differ by no more than {near_dup}% are treated as "
+         f"the same bill arriving twice during duplicate screening.")
+
+    default_kostl = snapshot.get("DEFAULT-KOSTL", "CC100")
+    on_invoice = invoice.get("kostl")
+    note("DEFAULT-KOSTL", False, default_kostl, on_invoice, "delegated",
+         f"Cost centre {default_kostl} is used to pick an approval band when the "
+         f"invoice does not name one."
+         + (f" This invoice named {on_invoice}." if on_invoice
+            else " This invoice did not name one."))
+
     if verdict == "PAY_READY":
         actions = ["pay", "notify_cleared"]
         why = "All active policies passed. Cleared for payment without a human."
