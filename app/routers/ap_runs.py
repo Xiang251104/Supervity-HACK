@@ -342,6 +342,18 @@ async def start_run(
     if not isinstance(canonical, dict):
         canonical = {}
 
+    # Auto also publishes a workflow-level canonical_invoice output, and _find()
+    # searches breadth-first so it can surface that copy instead of the Intake
+    # Operator's own. Observed live: the workflow-level copy carries belnr/lifnr/
+    # confidence/amount correctly but drops source_channel, which silently broke
+    # Outlook provenance below. CARD 8 of the Intake Operator's own contract is
+    # what assembles canonical_invoice field-by-field, so its embedded copy is the
+    # authoritative one — overlay it on top rather than trust whichever _find()
+    # found first.
+    intake_canonical = operator_results.get("intake_result", {}).get("canonical_invoice")
+    if isinstance(intake_canonical, dict) and intake_canonical:
+        canonical = {**canonical, **intake_canonical}
+
     run.trigger_source = _default_trigger_source(canonical, body.trigger_source)
 
     belnr = str(canonical.get("belnr") or body.invoice_ref)
