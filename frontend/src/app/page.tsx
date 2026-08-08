@@ -7,6 +7,7 @@ import { motion } from 'framer-motion'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { CardWatermark } from '@/components/ui/card-watermark'
 import { Icons } from '@/components/ui/icons'
+import { ProcessInvoiceCard } from '@/components/dashboard/ProcessInvoiceCard'
 import {
   barPercent,
   formatDuration,
@@ -347,6 +348,10 @@ export default function HomePage() {
       animate='visible'
     >
       <HeroSection metrics={metrics} />
+
+      <motion.div className='grid grid-cols-12 gap-6' variants={itemVariants}>
+        <ProcessInvoiceCard onRunCompleted={() => void load()} />
+      </motion.div>
 
       {error ? (
         <div
