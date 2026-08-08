@@ -122,6 +122,20 @@ class TestMessage:
 
 
 class TestSend:
+    def test_transport_failure_does_not_log_exception_text(self, monkeypatch, caplog):
+        secret = "https://hooks.example.test/services/SECRET-DO-NOT-LOG"
+        monkeypatch.setenv("SLACK_WEBHOOK_URL", "https://hooks.example.test/ap-alerts")
+
+        def explode(*args, **kwargs):
+            raise httpx.ConnectError(secret)
+
+        monkeypatch.setattr(slack.httpx, "post", explode)
+
+        result = slack.send("hello")
+
+        assert result.outcome == "failed"
+        assert secret not in caplog.text
+
     def test_reports_not_configured_rather_than_pretending_to_send(self, monkeypatch):
         monkeypatch.delenv("SLACK_WEBHOOK_URL", raising=False)
         result = slack.send("anything")
