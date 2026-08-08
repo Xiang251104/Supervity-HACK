@@ -9,6 +9,8 @@ from sqlalchemy.orm import Session
 
 from ..core.database import get_db
 from ..models.ap import Decision, RunEvent, WorkbenchItem
+from ..services import slack
+from ..services.language import reason_label
 from ..schemas.ap_workbench import (
     WorkbenchDecision,
     WorkbenchItemDetail,
@@ -34,6 +36,32 @@ def _reviewer_name(current_user: dict | None) -> str:
 
 def _decision_schema(decision: Decision | None) -> WorkbenchDecision | None:
     return WorkbenchDecision.model_validate(decision) if decision else None
+
+
+def _send_information_request(
+    item: WorkbenchItem,
+    decision: Decision | None,
+    question: str,
+    reviewer: str,
+) -> slack.SlackResult:
+    """Ask the channel for what is missing, in the reviewer's own words."""
+    amount = None
+    reason = None
+    if decision is not None:
+        if decision.amount is not None:
+            amount = f"{decision.currency or ''} {decision.amount:,.2f}".strip()
+        codes = decision.reason_codes if isinstance(decision.reason_codes, list) else []
+        reason = ", ".join(reason_label(str(code)) for code in codes) or None
+
+    message = slack.build_information_request(
+        belnr=item.belnr,
+        vendor=(decision.vendor_name if decision else None) or item.assigned_role,
+        amount=amount,
+        reason=reason,
+        question=question,
+        reviewer=reviewer,
+    )
+    return slack.send(message)
 
 
 def _detail(item: WorkbenchItem, decision: Decision | None) -> WorkbenchItemDetail:
@@ -89,6 +117,7 @@ def list_workbench_items(
             exception_type=item.exception_type,
             priority=item.priority,
             status=item.status,
+            action=item.action,
             assigned_role=item.assigned_role,
             created_at=item.created_at,
             verdict=decision.verdict if decision else None,
@@ -192,10 +221,42 @@ def resolve_workbench_item(
                 },
             )
         )
+
+        # Asking for information is only useful if the question reaches someone.
+        # The send is best-effort: its outcome is recorded, but a Slack outage
+        # must never lose the reviewer's decision.
+        result: slack.SlackResult | None = None
+        if resolution.action == "request_info":
+            result = _send_information_request(item, decision, resolution.note, reviewer)
+            db.add(
+                RunEvent(
+                    run_id=item.run_id,
+                    seq=next_seq + 1,
+                    event_type="integration_activity",
+                    operator_name="AP Workbench",
+                    summary=(
+                        f"Information request for invoice {item.belnr} "
+                        f"{'sent to Slack' if result.sent else 'not sent'}."
+                    ),
+                    payload={
+                        "integration_key": "slack",
+                        "outcome": result.outcome,
+                        "detail": result.detail,
+                        "belnr": item.belnr,
+                        "workbench_item_id": item.id,
+                        "reviewer": reviewer,
+                    },
+                )
+            )
+
         db.commit()
         db.refresh(item)
         db.refresh(decision)
-        return _detail(item, decision)
+        detail = _detail(item, decision)
+        if result is not None:
+            detail.notification_outcome = result.outcome
+            detail.notification_detail = result.detail
+        return detail
     except HTTPException:
         db.rollback()
         raise

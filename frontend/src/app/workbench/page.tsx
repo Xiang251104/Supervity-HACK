@@ -3,8 +3,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   AlertTriangle,
+  Archive,
   Check,
+  CircleAlert,
+  CircleCheck,
   CircleDollarSign,
+  CircleHelp,
+  CircleMinus,
   Clock3,
   FileSearch,
   LoaderCircle,
@@ -16,6 +21,16 @@ import {
 } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import {
+  OPERATOR_INFO,
+  STATUS_LABELS,
+  VERDICT_PLAIN,
+  actionLabel,
+  normalizeStatus,
+  reasonInfo,
+  type CheckStatus,
+  type ReasonTone,
+} from '@/lib/ap-language'
 import {
   getWorkbenchItem,
   getWorkbenchItems,
@@ -45,12 +60,26 @@ const VERDICT_STYLES: Record<string, string> = {
   PAY_READY: 'border-emerald-200 bg-emerald-50 text-emerald-800',
 }
 
+const REASON_TONE_STYLES: Record<ReasonTone, string> = {
+  danger: 'border-rose-200 bg-rose-50',
+  warning: 'border-amber-200 bg-amber-50',
+  info: 'border-slate-200 bg-slate-50',
+}
+
 function formatMoney(currency: string | null, amount: number | null): string {
   if (amount == null) return 'Amount unavailable'
   return `${currency || '—'} ${new Intl.NumberFormat('en-MY', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(amount)}`
+}
+
+/**
+ * Parked: a reviewer asked for something and is waiting. Still open — the
+ * decision has not been made — but distinct from untouched work.
+ */
+function isAwaitingInformation(item: { action?: string | null; status: string }): boolean {
+  return item.action === 'request_info' && item.status !== 'resolved'
 }
 
 function formatDate(value: string): string {
@@ -72,7 +101,7 @@ function VerdictBadge({ verdict }: { verdict: string | null }) {
         VERDICT_STYLES[verdict] || VERDICT_STYLES.DATA_ERROR
       )}
     >
-      {verdict.replaceAll('_', ' ')}
+      {(VERDICT_PLAIN[verdict] || verdict.replaceAll('_', ' ')).toUpperCase()}
     </span>
   )
 }
@@ -86,6 +115,7 @@ function QueueItem({
   selected: boolean
   onSelect: () => void
 }) {
+  const exception = reasonInfo(item.exception_type)
   return (
     <button
       type='button'
@@ -106,18 +136,26 @@ function QueueItem({
           PRIORITY_STYLES[item.priority] || PRIORITY_STYLES.normal
         )}
       />
-      <div className='ml-1 space-y-3'>
+      <div className='ml-1 space-y-2.5'>
         <div className='flex items-start justify-between gap-3'>
           <div>
             <p className='font-mono text-[11px] font-semibold tracking-[0.08em] text-slate-500'>
               {item.belnr}
             </p>
-            <h3 className='mt-1 text-sm font-semibold leading-5 text-slate-950'>{item.title}</h3>
+            <h3 className='mt-1 text-sm font-semibold leading-5 text-slate-950'>
+              {exception.label}
+            </h3>
           </div>
           <span className='rounded-full bg-slate-100 px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-slate-600'>
             {item.priority}
           </span>
         </div>
+        {isAwaitingInformation(item) ? (
+          <p className='inline-flex items-center gap-1.5 rounded-full border border-violet-200 bg-violet-50 px-2.5 py-1 text-[11px] font-semibold text-violet-800'>
+            <MessageSquareText className='h-3 w-3' />
+            Waiting on information
+          </p>
+        ) : null}
         <div className='flex flex-wrap items-center justify-between gap-2'>
           <VerdictBadge verdict={item.verdict} />
           <span className='font-mono text-xs font-semibold text-slate-800'>
@@ -132,6 +170,93 @@ function QueueItem({
     </button>
   )
 }
+
+/* ------------------------------------------------------------------ */
+/* Plain-language building blocks                                      */
+/* ------------------------------------------------------------------ */
+
+function ReasonCard({ code }: { code: string }) {
+  const info = reasonInfo(code)
+  // The raw code is deliberately not shown here — it lives in the full audit
+  // record below for anyone who needs to trace it.
+  return (
+    <div className={cn('rounded-xl border p-4', REASON_TONE_STYLES[info.tone])}>
+      <p className='text-sm font-semibold text-slate-900'>{info.label}</p>
+      {info.hint ? <p className='mt-1 text-sm leading-6 text-slate-700'>{info.hint}</p> : null}
+    </div>
+  )
+}
+
+const STATUS_ICONS: Record<CheckStatus, { icon: typeof CircleCheck; className: string }> = {
+  PASS: { icon: CircleCheck, className: 'text-emerald-600' },
+  FAIL: { icon: CircleAlert, className: 'text-rose-600' },
+  REVIEW: { icon: CircleHelp, className: 'text-amber-600' },
+  ERROR: { icon: CircleAlert, className: 'text-rose-600' },
+  NOT_APPLICABLE: { icon: CircleMinus, className: 'text-slate-400' },
+  UNKNOWN: { icon: CircleMinus, className: 'text-slate-400' },
+}
+
+interface CheckRow {
+  key: string
+  name: string
+  checks: string
+  status: CheckStatus
+  explanation: string
+}
+
+/** The six checks in processing order, from whatever operator results exist. */
+function buildCheckRows(detail: WorkbenchItemDetail): CheckRow[] {
+  const context = detail.context as Record<string, unknown> | null
+  const source =
+    (context?.operator_results as Record<string, unknown> | undefined) ??
+    (detail.decision?.evidence as Record<string, unknown> | undefined) ??
+    {}
+
+  return OPERATOR_INFO.map(({ key, name, checks }) => {
+    const raw = source[key]
+    const result = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
+    return {
+      key,
+      name,
+      checks,
+      status: normalizeStatus(result.status),
+      explanation: typeof result.explanation === 'string' ? result.explanation : '',
+    }
+  }).filter((row) => row.status !== 'UNKNOWN' || row.explanation)
+}
+
+function ChecksList({ rows }: { rows: CheckRow[] }) {
+  if (!rows.length) {
+    return <p className='text-sm text-slate-500'>No check results were attached to this decision.</p>
+  }
+  return (
+    <ul className='divide-y divide-slate-100 rounded-2xl border border-slate-200 bg-white'>
+      {rows.map((row) => {
+        const { icon: Icon, className } = STATUS_ICONS[row.status]
+        return (
+          <li key={row.key} className='flex gap-3 px-4 py-3'>
+            <Icon aria-hidden='true' className={cn('mt-0.5 h-5 w-5 shrink-0', className)} />
+            <div className='min-w-0'>
+              <p className='text-sm font-semibold text-slate-900'>
+                {row.name}
+                <span className={cn('ml-2 text-xs font-medium', className)}>
+                  {STATUS_LABELS[row.status]}
+                </span>
+              </p>
+              <p className='mt-0.5 text-sm leading-6 text-slate-600'>
+                {row.explanation || row.checks}
+              </p>
+            </div>
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/* Audit detail (collapsed by default)                                 */
+/* ------------------------------------------------------------------ */
 
 function EvidenceTree({ value, depth = 0 }: { value: unknown; depth?: number }) {
   if (value === null || value === undefined) {
@@ -186,7 +311,7 @@ function DetailEmpty() {
         <FileSearch className='mx-auto h-10 w-10 text-slate-300' />
         <h2 className='mt-4 text-lg font-semibold text-slate-900'>Select an exception</h2>
         <p className='mt-1 max-w-sm text-sm text-slate-500'>
-          Choose a queue item to inspect the AI decision and record a human action.
+          Choose a queue item to see why it was flagged and record your decision.
         </p>
       </div>
     </div>
@@ -212,6 +337,9 @@ function DecisionDetail({
 }) {
   const decision = detail.decision
   const isResolved = detail.status === 'resolved'
+  const awaitingInformation = isAwaitingInformation(detail)
+  const checkRows = useMemo(() => buildCheckRows(detail), [detail])
+  const confidence = decision?.confidence
 
   return (
     <article className='overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm'>
@@ -219,28 +347,44 @@ function DecisionDetail({
         <div className='flex flex-wrap items-start justify-between gap-4'>
           <div>
             <p className='font-mono text-xs tracking-[0.14em] text-slate-400'>
-              INVOICE {detail.belnr} · DECISION {detail.decision_id ?? 'UNLINKED'}
+              INVOICE {detail.belnr}
             </p>
-            <h2 className='mt-2 text-2xl font-semibold tracking-tight'>{detail.title}</h2>
+            <h2 className='mt-2 text-2xl font-semibold tracking-tight'>
+              {decision?.vendor_name || detail.title}
+            </h2>
+            <p className='mt-1 text-sm text-slate-300'>
+              {decision?.ebeln ? `Purchase order ${decision.ebeln}` : 'No purchase order'}
+              {decision?.lifnr ? ` · Vendor ${decision.lifnr}` : ''}
+            </p>
           </div>
           <VerdictBadge verdict={decision?.verdict ?? null} />
         </div>
         <div className='mt-6 grid gap-4 sm:grid-cols-3'>
           <div>
-            <p className='text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400'>Invoice amount</p>
+            <p className='text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400'>
+              Invoice amount
+            </p>
             <p className='mt-1 font-mono text-lg font-semibold'>
               {formatMoney(decision?.currency ?? null, decision?.amount ?? null)}
             </p>
           </div>
           <div>
-            <p className='text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400'>Protected value</p>
+            <p className='text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400'>
+              Held from payment
+            </p>
             <p className='mt-1 font-mono text-lg font-semibold text-rose-300'>
-              {formatMoney(decision?.currency ?? null, decision?.money_protected ?? null)}
+              {decision?.money_protected
+                ? formatMoney(decision?.currency ?? null, decision.money_protected)
+                : '—'}
             </p>
           </div>
           <div>
-            <p className='text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400'>Policy snapshot</p>
-            <p className='mt-1 text-sm font-medium'>{decision?.policy_version_label || 'Not recorded'}</p>
+            <p className='text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-400'>
+              Read confidence
+            </p>
+            <p className='mt-1 font-mono text-lg font-semibold'>
+              {confidence != null ? `${Math.round(confidence * 100)}%` : 'Not reported'}
+            </p>
           </div>
         </div>
       </header>
@@ -249,95 +393,86 @@ function DecisionDetail({
         <section aria-labelledby='why-flagged'>
           <div className='flex items-center gap-2'>
             <ShieldAlert className='h-5 w-5 text-rose-600' />
-            <h3 id='why-flagged' className='text-sm font-semibold uppercase tracking-[0.1em] text-slate-900'>
-              Why this was flagged
+            <h3
+              id='why-flagged'
+              className='text-sm font-semibold uppercase tracking-[0.1em] text-slate-900'
+            >
+              Why this needs you
             </h3>
           </div>
-          <div className='mt-4 flex flex-wrap gap-2'>
+          <div className='mt-4 space-y-3'>
             {decision?.reason_codes.length ? (
-              decision.reason_codes.map((reason) => (
-                <span key={reason} className='rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 font-mono text-xs font-semibold text-rose-800'>
-                  {reason}
-                </span>
-              ))
+              decision.reason_codes.map((reason) => <ReasonCard key={reason} code={reason} />)
             ) : (
-              <span className='text-sm text-slate-500'>No reason codes were recorded.</span>
+              <p className='text-sm text-slate-500'>No reasons were recorded.</p>
             )}
           </div>
           {detail.recommendation ? (
             <div className='mt-4 rounded-xl border border-indigo-100 bg-indigo-50/70 p-4 text-sm leading-6 text-indigo-950'>
-              <span className='font-semibold'>Recommended next step:</span> {detail.recommendation}
+              <span className='font-semibold'>Suggested next step:</span> {detail.recommendation}
             </div>
           ) : null}
         </section>
 
-        <section aria-labelledby='invoice-context'>
-          <h3 id='invoice-context' className='text-sm font-semibold uppercase tracking-[0.1em] text-slate-900'>
-            Invoice context
-          </h3>
-          <dl className='mt-4 grid grid-cols-2 gap-x-6 gap-y-4 sm:grid-cols-4'>
-            {[
-              ['Vendor', decision?.vendor_name || decision?.lifnr || '—'],
-              ['Vendor ID', decision?.lifnr || '—'],
-              ['Purchase order', decision?.ebeln || 'Non-PO'],
-              ['Assigned role', detail.assigned_role || 'Unassigned'],
-            ].map(([label, value]) => (
-              <div key={label}>
-                <dt className='text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500'>{label}</dt>
-                <dd className='mt-1 text-sm font-medium text-slate-900'>{value}</dd>
-              </div>
-            ))}
-          </dl>
-          {detail.context ? <div className='mt-4'><EvidenceTree value={detail.context} /></div> : null}
-        </section>
-
-        <section aria-labelledby='decision-evidence'>
-          <h3 id='decision-evidence' className='text-sm font-semibold uppercase tracking-[0.1em] text-slate-900'>
-            Decision evidence
-          </h3>
-          <div className='mt-4'>
-            {decision?.evidence ? (
-              <EvidenceTree value={decision.evidence} />
-            ) : (
-              <p className='text-sm text-slate-500'>No specialist evidence was attached.</p>
-            )}
-          </div>
-        </section>
-
-        <section aria-labelledby='reviewer-action' className='rounded-2xl border border-slate-200 bg-slate-50 p-5'>
+        <section
+          aria-labelledby='reviewer-action'
+          className='rounded-2xl border border-slate-200 bg-slate-50 p-5'
+        >
           <div className='flex items-center gap-2'>
             <UserRoundCheck className='h-5 w-5 text-brand-cornflower' />
-            <h3 id='reviewer-action' className='text-sm font-semibold uppercase tracking-[0.1em] text-slate-900'>
-              Human decision
+            <h3
+              id='reviewer-action'
+              className='text-sm font-semibold uppercase tracking-[0.1em] text-slate-900'
+            >
+              Your decision
             </h3>
           </div>
 
           {isResolved ? (
             <div className='mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4'>
               <p className='text-sm font-semibold text-emerald-900'>
-                Recorded as {detail.action?.replaceAll('_', ' ') || decision?.human_status || 'resolved'}
+                {detail.action ? actionLabel(detail.action) : 'Resolved'}
               </p>
               <p className='mt-1 text-sm text-emerald-800'>{detail.note}</p>
               <p className='mt-2 text-xs text-emerald-700'>By {detail.resolved_by || 'reviewer'}</p>
             </div>
           ) : (
             <>
+              {awaitingInformation ? (
+                <div className='mt-4 rounded-xl border border-violet-200 bg-violet-50 p-4'>
+                  <p className='flex items-center gap-2 text-sm font-semibold text-violet-900'>
+                    <MessageSquareText className='h-4 w-4' />
+                    Waiting on information
+                  </p>
+                  <p className='mt-2 text-sm italic leading-6 text-violet-900'>
+                    &ldquo;{detail.note}&rdquo;
+                  </p>
+                  <p className='mt-2 text-xs text-violet-700'>
+                    Asked by {detail.resolved_by || 'a reviewer'}. The invoice stays on hold
+                    until this is answered — approve or reject it once you have what you need.
+                  </p>
+                </div>
+              ) : null}
               <label htmlFor='reviewer-note' className='mt-4 block text-sm font-medium text-slate-800'>
-                Reviewer note
+                Your note <span className='font-normal text-slate-500'>(required)</span>
               </label>
               <textarea
                 id='reviewer-note'
                 value={note}
                 onChange={(event) => setNote(event.target.value)}
-                rows={4}
-                placeholder='Record what you checked and why you chose this action.'
+                rows={3}
+                placeholder='What did you check, and why this decision?'
                 className='mt-2 w-full resize-y rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 shadow-sm outline-none transition placeholder:text-slate-400 focus:border-brand-cornflower focus:ring-2 focus:ring-brand-cornflower/20'
               />
               {actionError ? (
-                <p role='alert' className='mt-2 text-sm font-medium text-rose-700'>{actionError}</p>
+                <p role='alert' className='mt-2 text-sm font-medium text-rose-700'>
+                  {actionError}
+                </p>
               ) : null}
               {actionSuccess ? (
-                <p role='status' className='mt-2 text-sm font-medium text-emerald-700'>{actionSuccess}</p>
+                <p role='status' className='mt-2 text-sm font-medium text-emerald-700'>
+                  {actionSuccess}
+                </p>
               ) : null}
               <div className='mt-4 grid gap-2 sm:grid-cols-3'>
                 <Button
@@ -347,8 +482,12 @@ function DecisionDetail({
                   className='bg-emerald-700 hover:bg-emerald-800'
                   aria-label='Approve payment'
                 >
-                  {submittingAction === 'approve' ? <LoaderCircle className='h-4 w-4 animate-spin' /> : <Check className='h-4 w-4' />}
-                  Approve
+                  {submittingAction === 'approve' ? (
+                    <LoaderCircle className='h-4 w-4 animate-spin' />
+                  ) : (
+                    <Check className='h-4 w-4' />
+                  )}
+                  Approve payment
                 </Button>
                 <Button
                   type='button'
@@ -357,8 +496,12 @@ function DecisionDetail({
                   className='bg-rose-700 hover:bg-rose-800'
                   aria-label='Reject payment'
                 >
-                  {submittingAction === 'reject' ? <LoaderCircle className='h-4 w-4 animate-spin' /> : <X className='h-4 w-4' />}
-                  Reject
+                  {submittingAction === 'reject' ? (
+                    <LoaderCircle className='h-4 w-4 animate-spin' />
+                  ) : (
+                    <X className='h-4 w-4' />
+                  )}
+                  Reject payment
                 </Button>
                 <Button
                   type='button'
@@ -367,13 +510,81 @@ function DecisionDetail({
                   disabled={Boolean(submittingAction)}
                   aria-label='Request information'
                 >
-                  {submittingAction === 'request_info' ? <LoaderCircle className='h-4 w-4 animate-spin' /> : <MessageSquareText className='h-4 w-4' />}
-                  Request information
+                  {submittingAction === 'request_info' ? (
+                    <LoaderCircle className='h-4 w-4 animate-spin' />
+                  ) : (
+                    <MessageSquareText className='h-4 w-4' />
+                  )}
+                  Ask for more info
                 </Button>
               </div>
             </>
           )}
         </section>
+
+        <section aria-labelledby='checks-run'>
+          <h3
+            id='checks-run'
+            className='text-sm font-semibold uppercase tracking-[0.1em] text-slate-900'
+          >
+            What the AI checked
+          </h3>
+          <div className='mt-4'>
+            <ChecksList rows={checkRows} />
+          </div>
+        </section>
+
+        <details className='group rounded-2xl border border-slate-200'>
+          <summary className='flex cursor-pointer items-center gap-2 rounded-2xl px-5 py-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 [&::-webkit-details-marker]:hidden'>
+            <Archive className='h-4 w-4 text-slate-400' />
+            Full audit record
+            <span className='ml-auto text-xs font-normal text-slate-400 group-open:hidden'>
+              Every field, for auditors
+            </span>
+          </summary>
+          <div className='space-y-6 border-t border-slate-100 p-5'>
+            <div>
+              <h4 className='text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-500'>
+                Assignment
+              </h4>
+              <dl className='mt-3 grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4'>
+                {[
+                  ['Assigned role', detail.assigned_role || 'Unassigned'],
+                  ['Assigned email', detail.assigned_email || '—'],
+                  ['Run', detail.run_id],
+                  ['Policy snapshot', decision?.policy_version_label || 'Not recorded'],
+                ].map(([label, value]) => (
+                  <div key={label}>
+                    <dt className='text-[10px] font-semibold uppercase tracking-[0.1em] text-slate-500'>
+                      {label}
+                    </dt>
+                    <dd className='mt-1 break-all text-sm font-medium text-slate-900'>{value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+            {decision?.evidence ? (
+              <div>
+                <h4 className='text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-500'>
+                  Check evidence
+                </h4>
+                <div className='mt-3'>
+                  <EvidenceTree value={decision.evidence} />
+                </div>
+              </div>
+            ) : null}
+            {detail.context ? (
+              <div>
+                <h4 className='text-[11px] font-semibold uppercase tracking-[0.1em] text-slate-500'>
+                  Decision context
+                </h4>
+                <div className='mt-3'>
+                  <EvidenceTree value={detail.context} />
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </details>
       </div>
     </article>
   )
@@ -453,7 +664,7 @@ export default function WorkbenchPage() {
   async function handleAction(action: WorkbenchAction) {
     if (!detail) return
     if (!note.trim()) {
-      setActionError('Add a reviewer note before recording an action.')
+      setActionError('Add a note before recording your decision.')
       return
     }
     setActionError(null)
@@ -463,10 +674,20 @@ export default function WorkbenchPage() {
       const updated = await resolveWorkbenchItem(detail.id, action, note)
       setDetail(updated)
       setNote('')
-      setActionSuccess(`${action.replaceAll('_', ' ')} recorded.`)
+      // Never imply the question went out when it did not.
+      const outcome = updated.notification_outcome
+      setActionSuccess(
+        outcome === 'success'
+          ? 'Request sent to the AP channel on Slack.'
+          : outcome === 'not_configured'
+            ? 'Request recorded. No Slack channel is configured, so nobody was notified.'
+            : outcome === 'failed'
+              ? 'Request recorded, but the Slack message could not be delivered.'
+              : `${actionLabel(action)}.`
+      )
       await loadQueue()
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : 'The human action could not be recorded.')
+      setActionError(error instanceof Error ? error.message : 'Your decision could not be recorded.')
     } finally {
       setSubmittingAction(null)
     }
@@ -483,7 +704,8 @@ export default function WorkbenchPage() {
             AP exception workbench
           </h1>
           <p className='mt-2 max-w-2xl text-sm leading-6 text-slate-600'>
-            Review held invoices with the original AI verdict intact. Every human action is written separately to the audit trail.
+            Invoices the AI would not clear on its own. Review why, then approve, reject, or ask
+            for more information — the AI&apos;s original verdict stays on record either way.
           </p>
         </div>
         <Button type='button' variant='outline' onClick={() => void loadQueue()} disabled={loadingQueue}>
@@ -495,18 +717,26 @@ export default function WorkbenchPage() {
       <section aria-label='Queue summary' className='grid gap-3 sm:grid-cols-2'>
         <div className='rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm'>
           <div className='flex items-center gap-3'>
-            <div className='rounded-xl bg-amber-100 p-2 text-amber-700'><AlertTriangle className='h-5 w-5' /></div>
+            <div className='rounded-xl bg-amber-100 p-2 text-amber-700'>
+              <AlertTriangle className='h-5 w-5' />
+            </div>
             <div>
-              <p className='text-xs font-semibold uppercase tracking-[0.1em] text-slate-500'>Queue in view</p>
+              <p className='text-xs font-semibold uppercase tracking-[0.1em] text-slate-500'>
+                Waiting for review
+              </p>
               <p className='mt-1 text-2xl font-semibold text-slate-950'>{total}</p>
             </div>
           </div>
         </div>
         <div className='rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm'>
           <div className='flex items-center gap-3'>
-            <div className='rounded-xl bg-rose-100 p-2 text-rose-700'><CircleDollarSign className='h-5 w-5' /></div>
+            <div className='rounded-xl bg-rose-100 p-2 text-rose-700'>
+              <CircleDollarSign className='h-5 w-5' />
+            </div>
             <div>
-              <p className='text-xs font-semibold uppercase tracking-[0.1em] text-slate-500'>Protected exposure in view</p>
+              <p className='text-xs font-semibold uppercase tracking-[0.1em] text-slate-500'>
+                Money held from payment
+              </p>
               <div className='mt-1 flex flex-wrap gap-x-4 gap-y-1 font-mono text-xl font-semibold text-slate-950'>
                 {protectedExposure.length > 0 ? (
                   protectedExposure.map(({ currency, amount }) => (
@@ -528,7 +758,12 @@ export default function WorkbenchPage() {
               Status
               <select
                 value={filters.status}
-                onChange={(event) => setFilters((current) => ({ ...current, status: event.target.value as WorkbenchFilters['status'] }))}
+                onChange={(event) =>
+                  setFilters((current) => ({
+                    ...current,
+                    status: event.target.value as WorkbenchFilters['status'],
+                  }))
+                }
                 className='mt-1.5 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-medium normal-case tracking-normal text-slate-900 outline-none focus:border-brand-cornflower focus:ring-2 focus:ring-brand-cornflower/20'
               >
                 <option value='open'>Open</option>
@@ -540,7 +775,12 @@ export default function WorkbenchPage() {
               Priority
               <select
                 value={filters.priority}
-                onChange={(event) => setFilters((current) => ({ ...current, priority: event.target.value as WorkbenchFilters['priority'] }))}
+                onChange={(event) =>
+                  setFilters((current) => ({
+                    ...current,
+                    priority: event.target.value as WorkbenchFilters['priority'],
+                  }))
+                }
                 className='mt-1.5 w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm font-medium normal-case tracking-normal text-slate-900 outline-none focus:border-brand-cornflower focus:ring-2 focus:ring-brand-cornflower/20'
               >
                 <option value='all'>All</option>
@@ -570,7 +810,12 @@ export default function WorkbenchPage() {
           ) : (
             <div className='max-h-[780px] space-y-3 overflow-y-auto pr-1 [content-visibility:auto]'>
               {items.map((item) => (
-                <QueueItem key={item.id} item={item} selected={selectedId === item.id} onSelect={() => setSelectedId(item.id)} />
+                <QueueItem
+                  key={item.id}
+                  item={item}
+                  selected={selectedId === item.id}
+                  onSelect={() => setSelectedId(item.id)}
+                />
               ))}
             </div>
           )}

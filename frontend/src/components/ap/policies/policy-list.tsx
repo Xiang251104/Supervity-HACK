@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
+import { valueTypeLabel } from '@/lib/ap-language'
 import { formatPolicyValue } from '@/lib/ap-policies'
 import { cn } from '@/lib/utils'
 import type { APPolicy, APPolicySeverity } from '@/types/ap-policies'
@@ -118,10 +119,10 @@ function PolicyCard({
 
         <CardContent className='space-y-5 pt-5'>
           <dl className='grid gap-x-5 gap-y-4 sm:grid-cols-2 lg:grid-cols-3'>
-            <PolicyField label='Current value'>
+            <PolicyField label='Current setting'>
               <span className='font-mono'>{formatPolicyValue(policy)}</span>
             </PolicyField>
-            <PolicyField label='Value type'>{policy.value_type}</PolicyField>
+            <PolicyField label='Setting type'>{valueTypeLabel(policy.value_type)}</PolicyField>
             <PolicyField label='Version'>{policy.version}</PolicyField>
           </dl>
 

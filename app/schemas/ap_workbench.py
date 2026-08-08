@@ -40,6 +40,9 @@ class WorkbenchItemSummary(BaseModel):
     exception_type: str
     priority: str
     status: str
+    # An open item that already carries an action is parked, not untouched:
+    # the queue shows those distinctly.
+    action: str | None = None
     assigned_role: str | None = None
     created_at: datetime
     verdict: str | None = None
@@ -72,6 +75,10 @@ class WorkbenchItemDetail(BaseModel):
     action: str | None = None
     note: str | None = None
     decision: WorkbenchDecision | None = None
+    # Set only on the response to request_info, so the reviewer is told whether
+    # the question actually reached the channel rather than assuming it did.
+    notification_outcome: str | None = None
+    notification_detail: str | None = None
 
 
 class WorkbenchResolveRequest(BaseModel):

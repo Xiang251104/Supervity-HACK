@@ -306,7 +306,9 @@ def test_policy_evaluations_from_other_runs_do_not_leak_in(insights: InsightHarn
 
     friction = found["policy-friction"]
     assert friction.metric_value == 1.0
-    assert friction.title == "GR-POLICY fired on 1 of 1 invoices"
+    # The reader is a finance user: the title leads with the rule's plain name,
+    # while the raw key stays in the body and evidence for the audit trail.
+    assert friction.title == "The goods-receipt requirement rule affected 1 of 1 invoices"
 
 
 def test_policy_friction_reports_the_most_recent_threshold(insights: InsightHarness):
@@ -321,7 +323,7 @@ def test_policy_friction_reports_the_most_recent_threshold(insights: InsightHarn
     with insights.session() as db:
         found = {i.key: i for i in compute_insights(db)}
 
-    assert "evaluated at 10" in found["policy-friction"].body
+    assert "its setting was 10" in found["policy-friction"].body
 
 
 def test_malformed_reason_codes_do_not_shred_into_characters(insights: InsightHarness):

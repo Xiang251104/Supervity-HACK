@@ -1,4 +1,5 @@
 import { apiClient } from '@/lib/api-client'
+import { REASON_INFO, humanizeCode, verdictPlain } from '@/lib/ap-language'
 import type { APMetrics } from '@/types/ap-metrics'
 
 export const getAPMetrics = (): Promise<APMetrics> =>
@@ -34,21 +35,17 @@ export function formatDuration(ms: number | null): string {
   return seconds < 60 ? `${seconds.toFixed(1)}s` : `${Math.floor(seconds / 60)}m ${Math.round(seconds % 60)}s`
 }
 
-/** Human-readable reason codes: PO_LINE_NO_MATCH -> "PO line no match". */
+/**
+ * Reason codes in reviewer language: PO_LINE_NO_MATCH -> "Amount doesn't match
+ * any PO line". Codes without a dictionary entry are humanized with acronyms
+ * kept intact rather than mangled ("Bec suspected").
+ */
 export function humaniseCode(code: string): string {
-  const spaced = code.replace(/_/g, ' ').toLowerCase()
-  return spaced.charAt(0).toUpperCase() + spaced.slice(1)
+  return REASON_INFO[code]?.label ?? humanizeCode(code)
 }
 
-const VERDICT_LABELS: Record<string, string> = {
-  PAY_READY: 'Pay ready',
-  HUMAN_REVIEW: 'Human review',
-  PAYMENT_HOLD: 'Payment hold',
-  DATA_ERROR: 'Data error',
-}
-
-export const verdictLabel = (verdict: string): string =>
-  VERDICT_LABELS[verdict] ?? humaniseCode(verdict)
+/** One vocabulary everywhere: the dashboard says what the Workbench says. */
+export const verdictLabel = (verdict: string): string => verdictPlain(verdict)
 
 /** Bar width as a percentage of the largest count in the set. */
 export function barPercent(count: number, values: number[]): number {

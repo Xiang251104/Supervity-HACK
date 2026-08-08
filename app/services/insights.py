@@ -33,6 +33,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Iterable
 
+from .language import policy_name, reason_label
+
 if TYPE_CHECKING:  # pragma: no cover
     from sqlalchemy.orm import Session
 
@@ -157,7 +159,9 @@ def _touchless_rate(decisions: list["Decision"]) -> ComputedInsight | None:
         for code in _codes(d):
             blockers[code] += 1
     ranked = sorted(blockers.items(), key=lambda kv: kv[1], reverse=True)[:5]
-    top = ", ".join(f"{code} ({count})" for code, count in ranked) or "no recurring code"
+    top = ", ".join(
+        f"{reason_label(code)} ({count})" for code, count in ranked
+    ) or "no recurring cause"
 
     return ComputedInsight(
         key="touchless-rate",
@@ -165,7 +169,7 @@ def _touchless_rate(decisions: list["Decision"]) -> ComputedInsight | None:
         severity=severity,
         body=(
             f"{len(cleared)} of {total} invoices cleared without a human, so the touchless "
-            f"rate {verb}. The codes holding the rest back, most frequent first: {top}. "
+            f"rate {verb}. What held the rest back, most frequent first: {top}. "
             "Each of these maps to a policy that can be tuned."
         ),
         metric_value=rate,
@@ -469,13 +473,13 @@ def _policy_friction(db: "Session", decisions: list["Decision"]) -> ComputedInsi
 
     return ComputedInsight(
         key="policy-friction",
-        title=f"{top_key} fired on {top_count} of {total} invoices",
+        title=f"The {policy_name(top_key)} rule affected {top_count} of {total} invoices",
         severity="info",
         body=(
-            f"{top_key} is the most frequently triggered policy. When it last fired it was "
-            f"evaluated at {latest_threshold.get(top_key)!r}. Adjusting it on the AI Policies "
-            "page and re-running the same invoices will change the outcome immediately — no "
-            "code, no redeploy."
+            f"The {policy_name(top_key)} rule ({top_key}) is the most frequently triggered "
+            f"policy. When it last applied, its setting was {latest_threshold.get(top_key)!r}. "
+            "Adjusting it on the AI Policies page and re-running the same invoices will "
+            "change the outcome immediately — no code, no redeploy."
         ),
         metric_value=float(top_count),
         metric_unit="invoices",
@@ -490,7 +494,7 @@ def _policy_friction(db: "Session", decisions: list["Decision"]) -> ComputedInsi
             ],
             "invoices_for_top_policy": belnrs.get(top_key, [])[:MAX_EVIDENCE_ROWS],
         },
-        action_label=f"Tune {top_key}",
+        action_label=f"Tune the {policy_name(top_key)} rule",
         action_type="create_policy",
         action_payload={"policy_key": top_key},
     )

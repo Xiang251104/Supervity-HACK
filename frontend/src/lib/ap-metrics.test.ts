@@ -66,18 +66,23 @@ describe('formatDuration', () => {
 })
 
 describe('humaniseCode', () => {
-  it('turns a reason code into a sentence', () => {
-    expect(humaniseCode('PO_LINE_NO_MATCH')).toBe('Po line no match')
-    expect(humaniseCode('BEC_SUSPECTED')).toBe('Bec suspected')
+  it('uses the reviewer-language label for known codes', () => {
+    expect(humaniseCode('PO_LINE_NO_MATCH')).toBe("Amount doesn't match any PO line")
+    expect(humaniseCode('BEC_SUSPECTED')).toBe('Possible payment-redirect fraud')
+  })
+
+  it('keeps acronyms intact on codes without a dictionary entry', () => {
+    expect(humaniseCode('PO_SOMETHING_NEW')).toBe('PO something new')
+    expect(humaniseCode('SOMETHING_NEW')).toBe('Something new')
   })
 })
 
 describe('verdictLabel', () => {
-  it('maps every known verdict', () => {
-    expect(verdictLabel('PAY_READY')).toBe('Pay ready')
-    expect(verdictLabel('PAYMENT_HOLD')).toBe('Payment hold')
-    expect(verdictLabel('HUMAN_REVIEW')).toBe('Human review')
-    expect(verdictLabel('DATA_ERROR')).toBe('Data error')
+  it('says what happened in the reviewer’s words', () => {
+    expect(verdictLabel('PAY_READY')).toBe('Cleared to pay')
+    expect(verdictLabel('PAYMENT_HOLD')).toBe('Payment held')
+    expect(verdictLabel('HUMAN_REVIEW')).toBe('Needs review')
+    expect(verdictLabel('DATA_ERROR')).toBe("Couldn't process")
   })
 
   it('falls back gracefully on an unknown verdict', () => {

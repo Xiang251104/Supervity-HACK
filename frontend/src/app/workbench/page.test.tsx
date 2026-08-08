@@ -27,6 +27,7 @@ const summary = {
   exception_type: 'PO_VENDOR_MISMATCH',
   priority: 'critical',
   status: 'open',
+  action: null,
   assigned_role: 'AP Manager',
   created_at: '2026-08-04T10:00:00Z',
   verdict: 'PAYMENT_HOLD',
@@ -81,13 +82,18 @@ describe('AP Workbench page', () => {
     })
   })
 
-  it('shows the live exception and its linked decision evidence', async () => {
+  it('shows the exception in plain language, never as a raw code', async () => {
     render(<WorkbenchPage />)
 
     expect(await screen.findByText('AP exception workbench')).toBeInTheDocument()
-    expect((await screen.findAllByText('Vendor mismatch requires review')).length).toBeGreaterThan(0)
+    // The reviewer sees words, not codes — in the queue card and the reason card.
+    expect(
+      (await screen.findAllByText('Purchase order belongs to a different vendor')).length
+    ).toBeGreaterThan(0)
     expect((await screen.findAllByText('MYR 805,966.59')).length).toBeGreaterThan(0)
-    expect(await screen.findByText('PO_VENDOR_MISMATCH')).toBeInTheDocument()
+    // No raw code anywhere a reviewer reads.
+    expect(screen.queryByText('PO_VENDOR_MISMATCH')).not.toBeInTheDocument()
+    // Full evidence survives inside the collapsed audit record.
     expect(screen.getAllByText('4110030').length).toBeGreaterThan(0)
   })
 
@@ -96,9 +102,9 @@ describe('AP Workbench page', () => {
     const approveButton = await screen.findByRole('button', { name: 'Approve payment' })
 
     fireEvent.click(approveButton)
-    expect(screen.getByText('Add a reviewer note before recording an action.')).toBeInTheDocument()
+    expect(screen.getByText('Add a note before recording your decision.')).toBeInTheDocument()
 
-    fireEvent.change(screen.getByLabelText('Reviewer note'), {
+    fireEvent.change(screen.getByLabelText(/your note/i), {
       target: { value: 'Verified with procurement.' },
     })
     fireEvent.click(approveButton)
@@ -110,5 +116,47 @@ describe('AP Workbench page', () => {
         'Verified with procurement.'
       )
     })
+  })
+
+  it('shows a parked item as waiting on information, still open for a decision', async () => {
+    const parked = {
+      ...detail,
+      status: 'open',
+      action: 'request_info',
+      note: 'Please send the delivery note.',
+      resolved_by: 'ku@example.com',
+    }
+    vi.mocked(getWorkbenchItems).mockResolvedValue({
+      items: [{ ...summary, action: 'request_info' }],
+      total: 1,
+    })
+    vi.mocked(getWorkbenchItem).mockResolvedValue(parked)
+
+    render(<WorkbenchPage />)
+
+    expect((await screen.findAllByText('Waiting on information')).length).toBeGreaterThan(0)
+    expect(await screen.findByText(/Please send the delivery note/)).toBeInTheDocument()
+    // Parked is not decided: the reviewer can still approve or reject.
+    expect(screen.getByRole('button', { name: 'Approve payment' })).toBeInTheDocument()
+  })
+
+  it('does not claim the question was sent when no Slack channel is configured', async () => {
+    vi.mocked(resolveWorkbenchItem).mockResolvedValue({
+      ...detail,
+      status: 'open',
+      action: 'request_info',
+      note: 'Need the delivery note.',
+      notification_outcome: 'not_configured',
+      notification_detail: 'SLACK_WEBHOOK_URL is not set, so no message was sent.',
+    })
+
+    render(<WorkbenchPage />)
+    const askButton = await screen.findByRole('button', { name: 'Request information' })
+    fireEvent.change(screen.getByLabelText(/your note/i), {
+      target: { value: 'Need the delivery note.' },
+    })
+    fireEvent.click(askButton)
+
+    expect(await screen.findByText(/nobody was notified/i)).toBeInTheDocument()
   })
 })

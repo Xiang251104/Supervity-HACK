@@ -16,6 +16,8 @@ export interface WorkbenchItemSummary {
   exception_type: string
   priority: string
   status: string
+  /** An open item with an action already recorded is parked, not untouched. */
+  action: string | null
   assigned_role: string | null
   created_at: string
   verdict: string | null
@@ -66,6 +68,9 @@ export interface WorkbenchItemDetail {
   action: string | null
   note: string | null
   decision: WorkbenchDecision | null
+  /** Present only on the response to "Ask for more info". */
+  notification_outcome?: 'success' | 'not_configured' | 'failed' | null
+  notification_detail?: string | null
 }
 
 export interface WorkbenchListResponse {
