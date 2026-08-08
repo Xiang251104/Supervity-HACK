@@ -1,4 +1,5 @@
 import { apiClient } from '@/lib/api-client'
+import { policyValueLabel } from '@/lib/ap-language'
 import type {
   APPolicy,
   APPolicyHistoryResponse,
@@ -61,7 +62,8 @@ export function formatPolicyValue(
   policy: Pick<APPolicy, 'value' | 'unit'>
 ): string {
   const unit = policy.unit?.trim()
-  const value = String(policy.value)
+  // Config tokens like "fo_aware" read as words; numbers keep their unit.
+  const value = policyValueLabel(policy.value)
 
   return unit ? `${value} ${unit}` : value
 }

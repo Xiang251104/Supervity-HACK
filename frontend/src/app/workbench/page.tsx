@@ -24,6 +24,8 @@ import { Button } from '@/components/ui/button'
 import {
   OPERATOR_INFO,
   STATUS_LABELS,
+  VERDICT_PLAIN,
+  actionLabel,
   normalizeStatus,
   reasonInfo,
   type CheckStatus,
@@ -56,13 +58,6 @@ const VERDICT_STYLES: Record<string, string> = {
   HUMAN_REVIEW: 'border-amber-200 bg-amber-50 text-amber-800',
   DATA_ERROR: 'border-slate-300 bg-slate-100 text-slate-700',
   PAY_READY: 'border-emerald-200 bg-emerald-50 text-emerald-800',
-}
-
-const VERDICT_PLAIN: Record<string, string> = {
-  PAYMENT_HOLD: 'Payment held',
-  HUMAN_REVIEW: 'Needs your review',
-  DATA_ERROR: 'Could not be processed',
-  PAY_READY: 'Cleared to pay',
 }
 
 const REASON_TONE_STYLES: Record<ReasonTone, string> = {
@@ -168,12 +163,11 @@ function QueueItem({
 
 function ReasonCard({ code }: { code: string }) {
   const info = reasonInfo(code)
+  // The raw code is deliberately not shown here — it lives in the full audit
+  // record below for anyone who needs to trace it.
   return (
     <div className={cn('rounded-xl border p-4', REASON_TONE_STYLES[info.tone])}>
-      <div className='flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1'>
-        <p className='text-sm font-semibold text-slate-900'>{info.label}</p>
-        <span className='font-mono text-[10px] tracking-[0.08em] text-slate-500'>{code}</span>
-      </div>
+      <p className='text-sm font-semibold text-slate-900'>{info.label}</p>
       {info.hint ? <p className='mt-1 text-sm leading-6 text-slate-700'>{info.hint}</p> : null}
     </div>
   )
@@ -422,7 +416,7 @@ function DecisionDetail({
           {isResolved ? (
             <div className='mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4'>
               <p className='text-sm font-semibold text-emerald-900'>
-                Recorded as {detail.action?.replaceAll('_', ' ') || decision?.human_status || 'resolved'}
+                {detail.action ? actionLabel(detail.action) : 'Resolved'}
               </p>
               <p className='mt-1 text-sm text-emerald-800'>{detail.note}</p>
               <p className='mt-2 text-xs text-emerald-700'>By {detail.resolved_by || 'reviewer'}</p>
@@ -650,7 +644,7 @@ export default function WorkbenchPage() {
       const updated = await resolveWorkbenchItem(detail.id, action, note)
       setDetail(updated)
       setNote('')
-      setActionSuccess(`${action.replaceAll('_', ' ')} recorded.`)
+      setActionSuccess(`${actionLabel(action)}.`)
       await loadQueue()
     } catch (error) {
       setActionError(error instanceof Error ? error.message : 'Your decision could not be recorded.')

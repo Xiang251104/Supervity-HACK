@@ -81,7 +81,7 @@ describe('AP Workbench page', () => {
     })
   })
 
-  it('shows the exception in plain language with the raw code kept for audit', async () => {
+  it('shows the exception in plain language, never as a raw code', async () => {
     render(<WorkbenchPage />)
 
     expect(await screen.findByText('AP exception workbench')).toBeInTheDocument()
@@ -90,8 +90,8 @@ describe('AP Workbench page', () => {
       (await screen.findAllByText('Purchase order belongs to a different vendor')).length
     ).toBeGreaterThan(0)
     expect((await screen.findAllByText('MYR 805,966.59')).length).toBeGreaterThan(0)
-    // The raw code stays visible in small print for the audit trail.
-    expect(await screen.findByText('PO_VENDOR_MISMATCH')).toBeInTheDocument()
+    // No raw code anywhere a reviewer reads.
+    expect(screen.queryByText('PO_VENDOR_MISMATCH')).not.toBeInTheDocument()
     // Full evidence survives inside the collapsed audit record.
     expect(screen.getAllByText('4110030').length).toBeGreaterThan(0)
   })

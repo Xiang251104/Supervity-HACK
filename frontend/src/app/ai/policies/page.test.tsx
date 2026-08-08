@@ -160,7 +160,7 @@ describe('AP Policies page', () => {
       )
     ).toBeInTheDocument()
     expect(within(policy).getByText('5000 MYR')).toBeInTheDocument()
-    expect(within(policy).getByText('number')).toBeInTheDocument()
+    expect(within(policy).getByText('Number')).toBeInTheDocument()
     expect(within(policy).getByText('Block')).toBeInTheDocument()
     expect(within(policy).getByText('Active')).toBeInTheDocument()
     expect(within(policy).getByText('7')).toBeInTheDocument()
@@ -175,7 +175,7 @@ describe('AP Policies page', () => {
       name: 'Unverified vendor route policy',
     })
     expect(within(inactive).getByText('Inactive')).toBeInTheDocument()
-    expect(within(inactive).getByText('enum')).toBeInTheDocument()
+    expect(within(inactive).getByText('Choice')).toBeInTheDocument()
     expect(within(inactive).getByText('Escalate')).toBeInTheDocument()
 
     const summary = screen.getByRole('region', { name: 'Policy summary' })
@@ -478,7 +478,7 @@ describe('AP Policies page', () => {
     expect(
       within(numberDialog).getByText('Blocks invoices that exceed the duplicate-risk ceiling.')
     ).toBeInTheDocument()
-    expect(within(numberDialog).getByText('number')).toBeInTheDocument()
+    expect(within(numberDialog).getByText('Number')).toBeInTheDocument()
     expect(within(numberDialog).getByText('5000 MYR')).toBeInTheDocument()
     expect(within(numberDialog).getByText('block')).toBeInTheDocument()
     expect(within(numberDialog).getByText('Active')).toBeInTheDocument()

@@ -236,3 +236,51 @@ export const STATUS_LABELS: Record<CheckStatus, string> = {
   ERROR: 'Check errored',
   UNKNOWN: 'No result',
 }
+
+/** Verdicts in the reviewer's words — the same words on every page. */
+export const VERDICT_PLAIN: Record<string, string> = {
+  PAY_READY: 'Cleared to pay',
+  HUMAN_REVIEW: 'Needs review',
+  PAYMENT_HOLD: 'Payment held',
+  DATA_ERROR: "Couldn't process",
+}
+
+export const verdictPlain = (verdict: string): string =>
+  VERDICT_PLAIN[verdict] ?? humanizeCode(verdict)
+
+/** Workbench actions, named by what actually happened. */
+export const ACTION_LABELS: Record<string, string> = {
+  approve: 'Payment approved',
+  reject: 'Payment rejected',
+  request_info: 'More information requested',
+}
+
+export const actionLabel = (action: string): string =>
+  ACTION_LABELS[action] ?? humanizeCode(action)
+
+/**
+ * Policy values a business user picks between, in words rather than config
+ * tokens. The stored value never changes — only what the screen shows.
+ */
+export const POLICY_VALUE_LABELS: Record<string, string> = {
+  fo_aware: 'Framework orders exempt',
+  strict_require_gr: 'Receipt required for every order',
+  advisory: 'Record only',
+  review: 'Send to a person',
+}
+
+export function policyValueLabel(value: unknown): string {
+  if (typeof value === 'string' && POLICY_VALUE_LABELS[value]) {
+    return POLICY_VALUE_LABELS[value]
+  }
+  return String(value)
+}
+
+export const VALUE_TYPE_LABELS: Record<string, string> = {
+  number: 'Number',
+  enum: 'Choice',
+  boolean: 'On / off',
+  date: 'Date',
+}
+
+export const valueTypeLabel = (type: string): string => VALUE_TYPE_LABELS[type] ?? type

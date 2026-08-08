@@ -1,5 +1,5 @@
 import { apiClient } from '@/lib/api-client'
-import { REASON_INFO, humanizeCode } from '@/lib/ap-language'
+import { REASON_INFO, humanizeCode, verdictPlain } from '@/lib/ap-language'
 import type { APMetrics } from '@/types/ap-metrics'
 
 export const getAPMetrics = (): Promise<APMetrics> =>
@@ -44,15 +44,8 @@ export function humaniseCode(code: string): string {
   return REASON_INFO[code]?.label ?? humanizeCode(code)
 }
 
-const VERDICT_LABELS: Record<string, string> = {
-  PAY_READY: 'Pay ready',
-  HUMAN_REVIEW: 'Human review',
-  PAYMENT_HOLD: 'Payment hold',
-  DATA_ERROR: 'Data error',
-}
-
-export const verdictLabel = (verdict: string): string =>
-  VERDICT_LABELS[verdict] ?? humaniseCode(verdict)
+/** One vocabulary everywhere: the dashboard says what the Workbench says. */
+export const verdictLabel = (verdict: string): string => verdictPlain(verdict)
 
 /** Bar width as a percentage of the largest count in the set. */
 export function barPercent(count: number, values: number[]): number {

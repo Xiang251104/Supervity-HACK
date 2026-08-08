@@ -14,6 +14,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
+import { policyValueLabel, valueTypeLabel } from '@/lib/ap-language'
 import { formatPolicyValue, validatePolicyValue } from '@/lib/ap-policies'
 import type { APEnumPolicy, APPolicy, APPolicyValue } from '@/types/ap-policies'
 
@@ -136,9 +137,9 @@ export function PolicyEditDialog({
             <h3 className='text-sm font-semibold text-brand-navy'>Policy details</h3>
             <dl className='mt-3 grid gap-x-4 gap-y-3 sm:grid-cols-2'>
               <PolicyMetadataField label='Key'>{policy.key}</PolicyMetadataField>
-              <PolicyMetadataField label='Value type'>{policy.value_type}</PolicyMetadataField>
+              <PolicyMetadataField label='Setting type'>{valueTypeLabel(policy.value_type)}</PolicyMetadataField>
               <PolicyMetadataField label='Description'>{policy.description}</PolicyMetadataField>
-              <PolicyMetadataField label='Current server value'>
+              <PolicyMetadataField label='Current setting'>
                 <span className='font-mono'>{formatPolicyValue(policy)}</span>
               </PolicyMetadataField>
               <PolicyMetadataField label='Severity'>{policy.severity}</PolicyMetadataField>
@@ -181,7 +182,7 @@ export function PolicyEditDialog({
               >
                 {enumOptions.map((option) => (
                   <option key={option} value={option}>
-                    {option}
+                    {policyValueLabel(option)}
                   </option>
                 ))}
               </select>

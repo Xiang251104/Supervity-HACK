@@ -78,11 +78,11 @@ describe('humaniseCode', () => {
 })
 
 describe('verdictLabel', () => {
-  it('maps every known verdict', () => {
-    expect(verdictLabel('PAY_READY')).toBe('Pay ready')
-    expect(verdictLabel('PAYMENT_HOLD')).toBe('Payment hold')
-    expect(verdictLabel('HUMAN_REVIEW')).toBe('Human review')
-    expect(verdictLabel('DATA_ERROR')).toBe('Data error')
+  it('says what happened in the reviewer’s words', () => {
+    expect(verdictLabel('PAY_READY')).toBe('Cleared to pay')
+    expect(verdictLabel('PAYMENT_HOLD')).toBe('Payment held')
+    expect(verdictLabel('HUMAN_REVIEW')).toBe('Needs review')
+    expect(verdictLabel('DATA_ERROR')).toBe("Couldn't process")
   })
 
   it('falls back gracefully on an unknown verdict', () => {
