@@ -20,14 +20,28 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 
 
 def _dataset_dir() -> str:
+    """Locate the organizer's csv folder and return it as one canonical path.
+
+    The location has to come from outside -- the pack may not be redistributed, so
+    it is not in this repo and everyone keeps it somewhere different. That makes it
+    the one untrusted input here, and every file this script opens is built from
+    it. Resolving it once, up front, means the rest of the script joins names onto
+    a path with no symlinks and no '..' left in it, and `_source_csv` can then
+    prove each result still sits directly inside it.
+    """
     candidates = [
         sys.argv[1] if len(sys.argv) > 1 else None,
         os.getenv("AP_DATASET_DIR"),
-        os.path.normpath(os.path.join(HERE, "..", "..", "dataset", "csv")),
+        os.path.join(HERE, "..", "..", "dataset", "csv"),
     ]
     for c in candidates:
-        if c and os.path.isdir(c) and os.path.isfile(os.path.join(c, "RBKP_Invoice.csv")):
-            return c
+        if not c:
+            continue
+        resolved = os.path.realpath(c)
+        if os.path.isdir(resolved) and os.path.isfile(
+            os.path.join(resolved, "RBKP_Invoice.csv")
+        ):
+            return resolved
     raise SystemExit(
         "Could not find the Round 2 dataset.\n"
         "The organizer pack is not committed to this repo (it may not be redistributed).\n"
@@ -41,6 +55,19 @@ SRC = _dataset_dir()
 OUT = HERE
 IMP = os.path.join(OUT, "import")
 os.makedirs(IMP, exist_ok=True)
+
+
+def _source_csv(name: str) -> str:
+    """Path to one table's csv, proven to sit directly inside the dataset folder.
+
+    `name` comes from the TABLES map in this file rather than from input, so this
+    is belt and braces -- but it costs nothing and it means no future edit can turn
+    a table name into a way out of the folder the caller pointed us at.
+    """
+    path = os.path.realpath(os.path.join(SRC, name + ".csv"))
+    if os.path.dirname(path) != SRC or not os.path.isfile(path):
+        raise SystemExit(f"{name}.csv is not a file inside {SRC}")
+    return path
 
 # source file -> supabase table name
 TABLES = {
@@ -105,7 +132,7 @@ sql.append("")
 
 report = []
 for src, tbl in TABLES.items():
-    path = os.path.join(SRC, src + ".csv")
+    path = _source_csv(src)
     with open(path, newline="", encoding="utf-8-sig") as f:
         rows = list(csv.DictReader(f))
     cols = [c.strip().lower() for c in rows[0].keys()]
@@ -152,7 +179,7 @@ for src, tbl in TABLES.items():
                   f"{' , numeric: ' + ','.join(sorted(numeric_cols)) if numeric_cols else ''}")
 
 # uniqueness check on ap_invoices.belnr
-with open(os.path.join(SRC, "RBKP_Invoice.csv"), newline="", encoding="utf-8-sig") as f:
+with open(_source_csv("RBKP_Invoice"), newline="", encoding="utf-8-sig") as f:
     belnrs = [r["BELNR"].strip() for r in csv.DictReader(f)]
 dupe = [k for k, v in Counter(belnrs).items() if v > 1]
 if dupe:
@@ -165,7 +192,7 @@ else:
 
 sql.append("-- Row counts to verify after import:")
 for src, tbl in TABLES.items():
-    with open(os.path.join(SRC, src + ".csv"), newline="", encoding="utf-8-sig") as f:
+    with open(_source_csv(src), newline="", encoding="utf-8-sig") as f:
         n = sum(1 for _ in csv.DictReader(f))
     sql.append(f"--   {tbl:20s} {n}")
 sql.append("")
