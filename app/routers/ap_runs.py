@@ -230,6 +230,20 @@ async def start_run(
             detail="Orchestrator produced no result. Nothing was decided and nothing was written.",
         )
 
+    # The Operators' evidence is not in the parent run — it sits in one child run
+    # per Operator. Flatten both into the shape the rest of this function reads.
+    try:
+        final_payload = await client.collect_run_outputs(final_payload)
+    except SupervityError as exc:
+        run.status = "failed"
+        run.error = f"Could not read Operator results: {exc}"[:2000]
+        run.finished_at = datetime.now(timezone.utc)
+        db.commit()
+        raise HTTPException(
+            status_code=502,
+            detail=f"Auto ran but its Operator results could not be read: {exc}",
+        ) from exc
+
     workflow_run_id = _find(final_payload, "runId") or _find(final_payload, "workflowRunId")
     if workflow_run_id:
         run.workflow_run_id = str(workflow_run_id)[:128]
