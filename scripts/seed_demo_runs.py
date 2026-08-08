@@ -68,10 +68,10 @@ def validated_base_url(raw: str, extra_hosts: Sequence[str] = ()) -> str:
     never the raw argument. Local hosts are fine by default; anything else
     has to be named with --allow-host, so reaching outside is always a choice.
     """
-    parts = urlsplit(raw if "://" in raw else f"http://{raw}")
+    parts = urlsplit(raw)
 
     if parts.scheme not in ALLOWED_SCHEMES:
-        raise SystemExit(f"--base-url must be http or https, not {parts.scheme or 'blank'}")
+        raise SystemExit(f"--base-url needs an http:// or https:// prefix, got {raw!r}")
 
     try:
         host, port = parts.hostname, parts.port
